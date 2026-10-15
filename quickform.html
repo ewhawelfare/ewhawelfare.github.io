@@ -449,7 +449,7 @@ const APP_NAME = 'QuickForm';
 /** SharePoint 문서 라이브러리 안의 저장 폴더 기본값. 기관마다 배포 링크에 &folder=경로 로 바꿀 수 있음 */
 const DATA_FOLDER = 'QuickFormData';
 const LEGACY_FOLDERS = ['EWelfareData/QuickForm'];   // 예전 기본값 — 이미 쓰던 기관은 자동으로 이어서 씀
-const APP_VERSION = 'QF-5.1.1 · 10-15 10:30';
+const APP_VERSION = 'QF-5.1.2 · 10-15 14:00';
 const GRAPH = 'https://graph.microsoft.com/v1.0';
 /** 권한 범위: 기본 Sites.ReadWrite.All, 배포 링크에 &perm=selected 면 Sites.Selected(지정한 사이트만) */
 const scopeStr = () => `openid profile email offline_access https://graph.microsoft.com/${Infra.cfg.permSelected ? 'Sites.Selected' : 'Sites.ReadWrite.All'}`;
@@ -2452,7 +2452,10 @@ const ApplyForm = {
     /** 프로그램에 따라 신청할 수 있는 품목만 보이게 (안 되는 품목은 0으로) */
     const applyItemRule = () => {
       const PI = s.programItems || {}; if (!Object.keys(PI).length) return;
-      const prog = el.querySelector('[data-f="program"]')?.value || '', ok = (PI[prog] || []).length ? PI[prog] : s.items.map(i => i.id);
+      const all = s.items.map(i => i.id), forP = p => (PI[p] || []).length ? PI[p] : all;
+      const prog = el.querySelector('[data-f="program"]')?.value || '';
+      // 프로그램을 고르기 전에는 모든 프로그램에서 되는 품목만 (예: 2시간권) → 고르면 그 프로그램에 맞게 열림
+      const ok = prog ? forP(prog) : all.filter(id => (s.programs || []).every(p => forP(p).includes(id)));
       el.querySelectorAll('[data-itemcell]').forEach(c => { const on = ok.includes(c.dataset.itemcell); c.hidden = !on; if (!on) c.querySelectorAll('[data-q]').forEach(q => { q.value = '0'; }); });
       el.querySelectorAll('[data-itemgrid]').forEach(g => { g.style.gridTemplateColumns = `repeat(${Math.max(1, Math.min(ok.length, 3))},minmax(0,1fr))`; });
     };
