@@ -449,7 +449,7 @@ const APP_NAME = 'QuickForm';
 /** SharePoint 문서 라이브러리 안의 저장 폴더 기본값. 기관마다 배포 링크에 &folder=경로 로 바꿀 수 있음 */
 const DATA_FOLDER = 'QuickFormData';
 const LEGACY_FOLDERS = ['EWelfareData/QuickForm'];   // 예전 기본값 — 이미 쓰던 기관은 자동으로 이어서 씀
-const APP_VERSION = 'QF-5.1.2 · 10-15 14:00';
+const APP_VERSION = 'QF-5.1.2 · 10-15 15:00';
 const GRAPH = 'https://graph.microsoft.com/v1.0';
 /** 권한 범위: 기본 Sites.ReadWrite.All, 배포 링크에 &perm=selected 면 Sites.Selected(지정한 사이트만) */
 const scopeStr = () => `openid profile email offline_access https://graph.microsoft.com/${Infra.cfg.permSelected ? 'Sites.Selected' : 'Sites.ReadWrite.All'}`;
@@ -891,7 +891,7 @@ function freshState() {
     config: { institutionName: '', appTitle: APP_NAME, bankName: '', bankAccount: '', bankHolder: '', webhookUrl: '', piiRetentionDays: 14 },
     services: [
       { id: 'parking', name: '주차권 신청', category: '시설 이용', desc: '이용하실 날짜에 필요한 주차권을 신청해 주세요.', useGuardian: true, programs: [], maxTotal: 14, qtyMode: 'date', mode: 'auto', schedule: { ...SAMPLE_PARKING_SCHEDULE }, userTypes: ['이용자', '강사', '유관기관', '거래처', '기타'], isGrid: true, days: DEFAULT_DAYS.slice(),
-        items: [{ id: 'p2h', name: '2시간권', price: 1000 }, { id: 'p4h', name: '4시간권', price: 2000 }, { id: 'pday', name: '종일권', price: 5000 }],
+        items: [{ id: 'p2h', name: '2시간권', price: 1000 }, { id: 'p4h', name: '4시간권', price: 2000 }, { id: 'pday', name: '종일권', price: 5000, hidden: true }],
         formsUrl: '', formsSource: '', mapping: {}, reportTitle: '주차권 구입 신청 명부', reportFooter: '위와 같이 주차권을 구입하고자 합니다.', rounds: [r1], currentRoundId: r1.id },
       { id: 'gift', name: '직원 명절선물 선택', category: '직원 복지·행정', payMode: 'none', phoneMode: 'off', useFund: true, maxTotal: 1, qtyMode: 'total', mode: 'manual', desc: '명절 선물을 하나 골라 주세요.', useGuardian: false, userTypes: ['정규직', '계약직', '강사', '사회복무요원'], isGrid: false, days: [],
         items: [{ id: 'g1', name: '한우 정육 세트', price: 0 }, { id: 'g2', name: '고급 곶감/한과 세트', price: 0 }, { id: 'g3', name: '백화점 상품권 (10만원)', price: 0 }],
