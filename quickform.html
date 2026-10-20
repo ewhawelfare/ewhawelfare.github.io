@@ -450,7 +450,7 @@ const APP_NAME = 'QuickForm';
 /** SharePoint 문서 라이브러리 안의 저장 폴더 기본값. 기관마다 배포 링크에 &folder=경로 로 바꿀 수 있음 */
 const DATA_FOLDER = 'QuickFormData';
 const LEGACY_FOLDERS = ['EWelfareData/QuickForm'];   // 예전 기본값 — 이미 쓰던 기관은 자동으로 이어서 씀
-const APP_VERSION = 'QF-5.4.0 · 10-20 11:00';
+const APP_VERSION = 'QF-5.4.1 · 10-20 11:40';
 const GRAPH = 'https://graph.microsoft.com/v1.0';
 /** 권한 범위: 기본 Sites.ReadWrite.All, 배포 링크에 &perm=selected 면 Sites.Selected(지정한 사이트만) */
 const scopeStr = () => `openid profile email offline_access https://graph.microsoft.com/${Infra.cfg.permSelected ? 'Sites.Selected' : 'Sites.ReadWrite.All'}`;
@@ -2393,6 +2393,7 @@ function applyCfg2(s) {
     ...((DB.config.holidays || []).length ? { hol: DB.config.holidays } : {}), ...((DB.config.notHolidays || []).length ? { nh: DB.config.notHolidays } : {}),
     s: { n: s.name, ds: s.desc || '', pg: s.programs || [], ut: s.userTypes || [], ug: !!s.useGuardian, gr: !!s.isGrid, dy: s.days || [], it: formItems(s).map(i => i.link ? [i.id, i.name, pubPrice(s, i.price), i.link] : [i.id, i.name, pubPrice(s, i.price)]), mx: Number(s.maxTotal) || 0, qm: qtyMode(s), ...(s.maxPerDay ? { md: Number(s.maxPerDay) } : {}), ...(payMode(s) === 'none' ? { pm: 'n' } : {}), ...(phoneMode(s) !== 'req' ? { ph: phoneMode(s) } : {}), ...(addrMode(s) !== 'off' ? { ad: addrMode(s) } : {}), ...packFields(s), ...packFacs(s), mo: mode, ...(s.closedMsg ? { cm: s.closedMsg } : {}), ...pubPick(s), ...pubLimits(s), ...pubRules(s), ...(hideDl(s) ? { hd: 1 } : {}) }
   };
+  c.sf = shortName(s);
   if (mode === 'auto') {
     const sc = s.schedule;
     c.s.sch = isWeekly(sc) ? { freq: 'week', time: sc.time || WEEK_DEF.time, ...(({ dlDow, startDow, every, ref }) => ({ dlDow, startDow, ...(every > 1 ? { every, ref } : {}) }))(wkOpt(sc)) } : { base: sc.base, before: sc.before, time: sc.time, ...(sc.anchor === 'issue' ? { anchor: 'issue' } : {}) };
@@ -2432,7 +2433,7 @@ async function unpackCfg(code) {
   } catch { }
   return null;
 }
-const applyLink2 = async s => `${location.origin}${location.pathname}?a=${await packCfg(applyCfg2(s))}`;
+const applyLink2 = async s => `${location.origin}${location.pathname}?a=${await packCfg({ ...applyCfg2(s), ts: Math.floor(Date.now() / 1000) })}`;   // ts: 만든 시각(더 새 링크로만 바꿔 열기)
 const cfgSig = async s => { const t = JSON.stringify(applyCfg2(s)); let h = 0; for (let i = 0; i < t.length; i++) h = (h * 31 + t.charCodeAt(i)) | 0; return (h >>> 0).toString(36); };
 /** 휴대폰에서: 지금 신청을 받는 회차 찾기 */
 function resolveRound(c, now = new Date()) {
@@ -2522,7 +2523,7 @@ const ApplyForm = {
         : f.type === 'date' ? `<input data-x="${esc(f.id)}" type="date" class="${inCls}">`
         : `<input data-x="${esc(f.id)}" maxlength="100" class="${inCls}">`}</section>`).join('')}
       <section>${lbl(no(), '신청 내역')}
-        ${PX && !pick ? `<p class="text-sm text-slate-600 mb-2">한 분이 이번 회차에 <b>최대 ${PX}${U}</b>까지 신청할 수 있어요. 나눠서 신청하셔도 합쳐서 세요.</p>` : ''}
+        ${PX && !pick ? `<p class="text-sm text-slate-600 mb-2">한 분이 이번 회차에 <b>최대 ${PX}${U}</b>까지 신청할 수 있어요. 나눠서 신청하셔도 합쳐서 계산해요.</p>` : ''}
         ${pick ? '<p class="text-sm text-slate-600 mb-2">하나를 골라 주세요.</p>' : max && qm === 'total' ? `<p class="text-sm text-slate-600 mb-2">한 번에 <b>최대 ${max}${U}</b>까지 신청할 수 있어요.</p>` : ''}
         ${!pick && qm !== 'total' && s.items.some(i => i.link) ? `<p class="text-sm mb-2">${s.items.filter(i => i.link).map(i => `<a href="${esc(i.link)}" target="_blank" rel="noopener" class="text-ewelfare-700 underline mr-3">${esc(i.name)} 보기</a>`).join('')}</p>` : ''}
         ${qm === 'date' ? (dates.length ? `<p class="text-xs text-slate-500 mb-2">이용하실 날짜를 하나씩 추가하고, 권종별 수량을 골라 주세요.</p>
@@ -3060,6 +3061,18 @@ async function openQr() {
 /* ---------- 공개 신청 페이지 (?apply=) ---------- */
 function renderApplyPage(code) { renderApplyCore(decCfg(code)); }
 /** v2 고정 링크: 지금 받는 회차를 찾아 신청서를 보여 주고, 마감됐으면 다음 회차 안내 */
+/** 예전 긴 주소·휴대폰에 캐시된 이동 파일로 열어도 최신 설정으로: 같은 폴더의 짧은 주소 파일(예: parking.html)을 캐시 없이 읽어 신청 코드가 다르면 바꿔 엶 */
+async function freshApplyCode(code) {
+  try {
+    const c = await unpackCfg(code); if (!c?.sid) return false;
+    const f = c.sf || (String(c.sid).toLowerCase().replace(/[^a-z0-9_-]/g, '') + '.html');
+    const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 2500);
+    const txt = await (await fetch(`${f}?t=${Date.now()}`, { cache: 'no-store', signal: ctl.signal })).text(); clearTimeout(t);
+    const m = txt.match(/[?&]a=([A-Za-z0-9._-]+)/); if (!m || m[1] === code) return false;
+    const n = await unpackCfg(m[1]); if (!n || n.sid !== c.sid || (Number(n.ts) || 0) <= (Number(c.ts) || 0)) return false;
+    location.replace(`${location.pathname}?a=${m[1]}`); return true;
+  } catch { return false; }
+}
 async function renderApplyPage2(code, pick = '') {
   const c = await unpackCfg(code);
   if (!c || !c.s) return renderApplyCore(null);
@@ -4735,7 +4748,7 @@ async function boot() {
   const ap = new URLSearchParams(location.search).get('apply');
   if (ap) { renderApplyPage(ap); return; }
   const ap2 = new URLSearchParams(location.search).get('a');
-  if (ap2) { renderApplyPage2(ap2); return; }
+  if (ap2) { if (await freshApplyCode(ap2)) return; renderApplyPage2(ap2); return; }
   if (FOREIGN_FRAME) return bootScreen(`<p class="text-sm text-slate-700 leading-relaxed">보안을 위해 직원 화면은 다른 사이트 안에서 열 수 없습니다.</p><a href="${esc(location.href)}" target="_blank" rel="noopener" class="block w-full py-2.5 rounded-lg bg-ewelfare-900 text-white font-bold text-sm">브라우저에서 열기</a>`);
   if (EMBED) document.body.classList.add('qf-embed');
   Infra.load();
