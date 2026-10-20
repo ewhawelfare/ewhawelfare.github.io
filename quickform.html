@@ -450,7 +450,7 @@ const APP_NAME = 'QuickForm';
 /** SharePoint 문서 라이브러리 안의 저장 폴더 기본값. 기관마다 배포 링크에 &folder=경로 로 바꿀 수 있음 */
 const DATA_FOLDER = 'QuickFormData';
 const LEGACY_FOLDERS = ['EWelfareData/QuickForm'];   // 예전 기본값 — 이미 쓰던 기관은 자동으로 이어서 씀
-const APP_VERSION = 'QF-5.4.2 · 10-20 12:10';
+const APP_VERSION = 'QF-5.4.3 · 10-20 13:00';
 const GRAPH = 'https://graph.microsoft.com/v1.0';
 /** 권한 범위: 기본 Sites.ReadWrite.All, 배포 링크에 &perm=selected 면 Sites.Selected(지정한 사이트만) */
 const scopeStr = () => `openid profile email offline_access https://graph.microsoft.com/${Infra.cfg.permSelected ? 'Sites.Selected' : 'Sites.ReadWrite.All'}`;
@@ -2329,13 +2329,14 @@ async function openEventRound() {
       <div class="grid grid-cols-2 gap-2 text-xs mt-2">
         <label class="col-span-2">신청자에게 보일 안내${H('행사 이름 아래에 그대로 보입니다. 예: 10/22(목) 가을 축제 방문객용. 행사장 방문 시 주차권을 사용해 주세요.')}<textarea data-ev="desc" rows="3" class="qf-in mt-1" placeholder="예: 10월 22일(목) 가을 음악회 참석자용 주차권입니다.">${esc(r0?.desc || '')}</textarea></label>
         <div class="col-span-2"><p>받을 품목${H('고른 품목만 신청서에 나옵니다(평소 숨긴 종일권도 고를 수 있음). 아무것도 안 고르면 정기 신청과 같은 규칙(프로그램·구분별)을 따릅니다.')}</p><div class="mt-1">${its}</div></div>
+        <div class="col-span-2"><p>대상 프로그램${H('고른 프로그램만 신청서의 "관련 프로그램"에 나옵니다. 하나만 고르면 미리 골라져 있습니다. 아무것도 안 고르면 모든 프로그램.')}</p><div class="mt-1">${(s.programs || []).map(p => `<label class="inline-flex items-center gap-1 mr-3"><input type="checkbox" data-ev-pg="${esc(p)}" ${(r0?.programs || []).includes(p) ? 'checked' : ''}> ${esc(p)}</label>`).join('') || '<span class="text-slate-400">이 서비스에 프로그램이 없습니다.</span>'}</div></div>
         <label>하루 한도 (장)${H('비우면 정기 신청과 같습니다.')}<input type="number" min="0" max="20" data-ev="perDay" value="${Number(r0?.perDay) || ''}" class="qf-in mt-1 !w-28" placeholder="기본"></label>
       </div>`,
     onOpen(b) { initRoundBox(b.querySelector('[data-roundbox]'), s, null, r0 || {}); const n = b.querySelector('[data-r="name"]'); n.placeholder = '예: 10/22 가을 음악회 주차권'; const R = k => b.querySelector(`[data-r="${k}"]`); R('validStart').addEventListener('change', () => { const v = R('validStart').value; ['validEnd', 'pickupStart', 'pickupEnd'].forEach(k => { if (!R(k).value) R(k).value = v; }); renderClosedGrid(b.querySelector('[data-roundbox]')); }); },
     async collect(b) {
       const o = readRoundFields(b);
       if (!o.deadline) throw new Error('신청 마감 날짜·시각을 입력하세요.');
-      const ex = { extra: true, desc: b.querySelector('[data-ev="desc"]').value.replace(/\r/g, '').trim(), items: [...b.querySelectorAll('[data-ev-it]:checked')].map(x => x.dataset.evIt), perDay: Math.min(20, Math.max(0, parseInt(b.querySelector('[data-ev="perDay"]').value, 10) || 0)) };
+      const ex = { extra: true, desc: b.querySelector('[data-ev="desc"]').value.replace(/\r/g, '').trim(), items: [...b.querySelectorAll('[data-ev-it]:checked')].map(x => x.dataset.evIt), programs: [...b.querySelectorAll('[data-ev-pg]:checked')].map(x => x.dataset.evPg), perDay: Math.min(20, Math.max(0, parseInt(b.querySelector('[data-ev="perDay"]').value, 10) || 0)) };
       let id = r0?.id;
       await mutateMain(d => { const x = findSvc(d, s.id); if (r0) { const r = x.rounds.find(y => y.id === r0.id); if (r) Object.assign(r, o, ex, { edited: true }); } else { const nr = { ...newRound(o), personMax: o.personMax, ...ex }; id = nr.id; x.rounds.push(nr); } });
       VIEW.roundId = id; saveView(); renderAll();
@@ -2367,6 +2368,7 @@ function applyCfg(s, r, staff = false) {
     const it = (r.items || []).map(id => s.items.find(i => i.id === id)).filter(Boolean);
     if (it.length) { c.s.it = it.map(i => i.link ? [i.id, i.name, pubPrice(s, i.price), i.link] : [i.id, i.name, pubPrice(s, i.price)]); delete c.s.pi; delete c.s.tr; c.s.hi = []; }
     if (Number(r.perDay) > 0) { c.s.md = Number(r.perDay); delete c.s.pl; }
+    if ((r.programs || []).length) c.s.pg = r.programs.filter(p => (s.programs || []).includes(p));
     delete c.s.hd;
   }
   return c;
@@ -2410,7 +2412,7 @@ function applyCfg2(s) {
   } else {
     c.rs = s.rounds.filter(r => !r.extra && !r.piiPurgedAt && (!r.deadline || parseDT(r.deadline) > addDays(now, -1))).map(r => ({ id: r.id, ...rr(r) }));
   }
-  const ex = eventRounds(s, now).map(r => ({ id: r.id, ...rr(r), ...(r.desc ? { ds: r.desc } : {}), ...((r.items || []).length ? { it: r.items.map(id => s.items.find(i => i.id === id)).filter(Boolean).map(i => i.link ? [i.id, i.name, pubPrice(s, i.price), i.link] : [i.id, i.name, pubPrice(s, i.price)]) } : {}), ...(Number(r.perDay) > 0 ? { md: Number(r.perDay) } : {}) }));
+  const ex = eventRounds(s, now).map(r => ({ id: r.id, ...rr(r), ...(r.desc ? { ds: r.desc } : {}), ...((r.items || []).length ? { it: r.items.map(id => s.items.find(i => i.id === id)).filter(Boolean).map(i => i.link ? [i.id, i.name, pubPrice(s, i.price), i.link] : [i.id, i.name, pubPrice(s, i.price)]) } : {}), ...(Number(r.perDay) > 0 ? { md: Number(r.perDay) } : {}), ...((r.programs || []).length ? { pg: r.programs } : {}) }));
   if (ex.length) c.ex = ex;
   return c;
 }
@@ -2460,7 +2462,7 @@ function resolveRound(c, now = new Date()) {
   list = list.filter(r => r.deadline).sort((a, b) => parseDT(a.deadline) - parseDT(b.deadline));
   const cur = list.find(r => parseDT(r.deadline) > now) || null;
   const past = list.filter(r => parseDT(r.deadline) <= now).pop() || null;
-  const events = (c.ex || []).map(x => ({ id: x.id, name: x.n, deadline: x.dl, validStart: x.vs, validEnd: x.ve, pickupStart: x.ps, pickupEnd: x.pe, openAt: x.op || '', closedDates: x.cd || [], personMax: x.px || 0, desc: x.ds || '', it: x.it, md: x.md || 0, extra: true }))
+  const events = (c.ex || []).map(x => ({ id: x.id, name: x.n, deadline: x.dl, validStart: x.vs, validEnd: x.ve, pickupStart: x.ps, pickupEnd: x.pe, openAt: x.op || '', closedDates: x.cd || [], personMax: x.px || 0, desc: x.ds || '', it: x.it, md: x.md || 0, pg: x.pg || null, extra: true }))
     .filter(r => parseDT(r.deadline) > now && (!r.openAt || parseDT(r.openAt) <= now)).sort((a, b) => parseDT(a.deadline) - parseDT(b.deadline));
   return { cur, past, H, events };
 }
@@ -2501,7 +2503,7 @@ const ApplyForm = {
     el.innerHTML = `<div class="space-y-6 text-slate-800">
       ${(s.facilities || []).length ? `<section>${lbl(no(), '시설')}${chipGroup('ap-fac', s.facilities, s.facilities.length === 1 ? s.facilities[0] : '')}</section>` : ''}
       ${s.programs.length ? `<section>${lbl(no(), '관련 프로그램')}
-        <select data-f="program" class="${inCls}"><option value="">이용 중인 프로그램을 선택하세요</option>${s.programs.map(p => `<option>${esc(p)}</option>`).join('')}</select></section>` : ''}
+        <select data-f="program" class="${inCls}"><option value="">이용 중인 프로그램을 선택하세요</option>${s.programs.map(p => `<option ${s.programs.length === 1 ? 'selected' : ''}>${esc(p)}</option>`).join('')}</select></section>` : ''}
       <section>${lbl(no(), '신청자 구분')}${chipGroup('ap-utype', types, types.length === 1 ? types[0] : '')}</section>
       ${s.useGuardian ? `<section data-proxybox class="hidden rounded-xl border border-ewelfare-200 bg-ewelfare-50/60 p-4 space-y-3">
         <label class="flex items-center gap-3 text-[15px] font-bold"><input type="checkbox" data-f="isProxy" class="w-5 h-5 accent-emerald-800"> 이용자의 보호자입니다 (대리 신청)</label>
@@ -2642,6 +2644,7 @@ const ApplyForm = {
       if (e.target.closest('[data-copydep]')) { const d = depName(); d ? copyText(d, '입금자명을 복사했습니다.') : UI.toast('성명과 연락처를 먼저 입력하세요.', 'err'); }
     });
     sync();
+    { const one = addSel ? [...addSel.options].filter(o => o.value && !o.disabled) : []; if (one.length === 1 && dayList && !dayList.children.length) { addDay(one[0].value); sync(); } }   // 하루짜리(행사 등)는 날짜를 바로 넣어 둠
     return {
       collect() {
         const v = k => ($e(`[data-f="${k}"]`)?.value || '').trim();
@@ -2707,6 +2710,7 @@ function validateApply(s, o) {
     if (!empty && (f.type === 'choice' && !f.opts.includes(v) || f.type === 'yesno' && !['예', '아니오'].includes(v) || f.type === 'multi' && (!Array.isArray(v) || v.some(x => !f.opts.includes(x))))) return `보기에 없는 답(${f.label})`;
   }
   if ((s.programs || []).length && !s.programs.includes(o.program)) return '등록되지 않은 프로그램';
+  { const R1 = findRoundByRid(s, o.rid); if (R1?.extra && (R1.programs || []).length && !R1.programs.includes(o.program) && !o.staffEntry) return `이 행사 대상이 아닌 프로그램(${o.program})`; }
   const q = o.itemQty || {}; let cnt = 0;
   const R0 = findRoundByRid(s, o.rid), EV = R0?.extra ? R0 : null;
   const okItems = (EV?.items || []).length ? EV.items : itemsFor(s, o.program, o.userType);
@@ -3092,9 +3096,9 @@ async function renderApplyPage2(code, pick = '') {
   const back = () => { if (!events.length) return; const h = document.querySelector('header'); if (!h) return; h.insertAdjacentHTML('beforebegin', '<button type="button" data-qf-back class="mb-3 text-sm font-semibold text-ewelfare-700"><i class="fa-solid fa-arrow-left"></i> 다른 신청 고르기</button>'); document.querySelector('[data-qf-back]').onclick = () => { scrollTo(0, 0); renderApplyPage2(code); }; };
   const ev = pick && events.find(e => e.id === pick);
   if (ev) {
-    const s1 = { ...c.s, dt: c.s.qm === 'date' ? roundDates({ days: c.s.dy, validStart: '' }, ev, H) : undefined, hd: 0, ...(ev.it ? { it: ev.it, pi: undefined, tr: undefined, hi: [] } : {}), ...(ev.md ? { md: ev.md, pl: undefined, tr: ev.it ? undefined : c.s.tr } : {}), ...(ev.personMax > 0 ? { px: ev.personMax } : {}) };
+    const s1 = { ...c.s, n: `${ev.name}${/주차권/.test(ev.name) ? ' 신청' : ' 주차권 신청'}`, ds: '', nt: '', ...(ev.pg ? { pg: ev.pg } : {}), dt: c.s.qm === 'date' ? roundDates({ days: c.s.dy, validStart: '' }, ev, H) : undefined, hd: 0, ...(ev.it ? { it: ev.it, pi: undefined, tr: undefined, hi: [] } : {}), ...(ev.md ? { md: ev.md, pl: undefined, tr: ev.it ? undefined : c.s.tr } : {}), ...(ev.personMax > 0 ? { px: ev.personMax } : {}) };
     const c1 = { ...c, v: 1, rid: ev.id, s: s1, r: { n: ev.name, dl: ev.deadline, vs: ev.validStart, ve: ev.validEnd, ps: ev.pickupStart, pe: ev.pickupEnd } };
-    renderApplyCore(c1, { notice: ev.desc ? `[${ev.name}] ${ev.desc}` : `${ev.name} 신청이에요.`, onClosed: () => renderApplyPage2(code) }); back(); return;
+    renderApplyCore(c1, { notice: [ev.desc || '행사 참석자만 신청해 주세요.', '주차권은 다른 분께 양도하실 수 없어요. 프로그램 담당 선생님께 대신 부탁하실 수 없어요.'].join(' '), onClosed: () => renderApplyPage2(code) }); back(); return;
   }
   if (events.length && pick !== 'reg') {
     const evCard = e => `<button type="button" data-pick="${esc(e.id)}" class="w-full text-left bg-white rounded-2xl border-2 border-amber-300 hover:border-amber-500 p-5 space-y-1.5"><span class="inline-block text-[11px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">행사</span><p class="font-extrabold text-lg">${esc(e.name)}</p>${e.desc ? `<p class="text-sm text-slate-700 whitespace-pre-line">${esc(e.desc)}</p>` : ''}<p class="text-sm text-rose-600 font-semibold">신청 마감: ${esc(krDateTime(e.deadline))}</p><p class="text-sm text-slate-600">이용 날짜: ${esc(krRange(e.validStart, e.validEnd))}</p></button>`;
@@ -3548,7 +3552,7 @@ async function kioskApply(rid = '') {
   const close = (reopen = true) => { clearTimeout(ov._t); ov.remove(); if (reopen && KSCREEN === 'apply') setTimeout(autoKioskApply, 400); };
   ov.innerHTML = `<div class="max-w-lg mx-auto px-4 py-5 pb-32"><header class="bg-white rounded-2xl border border-slate-200 p-5 mb-4 space-y-2">
       <p class="text-xs font-bold text-emerald-800">${esc(DB.config.institutionName || '')}</p><h1 class="text-xl font-extrabold">${esc(s.name)}</h1>
-      ${s.desc ? `<p class="text-sm text-slate-600">${esc(s.desc)}</p>` : ''}${noticeBox(noticeOf(s))}${r.extra ? `<div class="rounded-xl bg-amber-50 border border-amber-300 p-3 text-sm text-amber-900"><b>[행사] ${esc(r.name)}</b>${r.desc ? `<br>${esc(r.desc)}` : ''}</div>` : ''}<div class="rounded-xl bg-slate-50 border p-3 text-sm space-y-0.5">${periodText(r, true, qtyMode(s) !== 'total', s).map(x => `<p>${esc(x)}</p>`).join('')}</div></header>
+      ${s.desc ? `<p class="text-sm text-slate-600">${esc(s.desc)}</p>` : ''}${r.extra ? '' : noticeBox(noticeOf(s))}${r.extra ? `<div class="rounded-xl bg-amber-50 border border-amber-300 p-3 text-sm text-amber-900"><b>[행사] ${esc(r.name)}</b>${r.desc ? `<br>${esc(r.desc)}` : ''}</div>` : ''}<div class="rounded-xl bg-slate-50 border p-3 text-sm space-y-0.5">${periodText(r, true, qtyMode(s) !== 'total', s).map(x => `<p>${esc(x)}</p>`).join('')}</div></header>
     <div class="bg-white rounded-2xl border border-slate-200 p-5" data-body><div data-form></div></div></div>
     <div class="fixed bottom-0 inset-x-0 bg-white/95 border-t border-slate-200 p-3" data-bar><div class="max-w-lg mx-auto flex gap-2">
       <button data-cancel class="flex-1 py-3.5 rounded-xl bg-slate-100 text-slate-700 font-bold">처음으로</button>
