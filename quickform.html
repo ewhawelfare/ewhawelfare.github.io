@@ -450,7 +450,7 @@ const APP_NAME = 'QuickForm';
 /** SharePoint 문서 라이브러리 안의 저장 폴더 기본값. 기관마다 배포 링크에 &folder=경로 로 바꿀 수 있음 */
 const DATA_FOLDER = 'QuickFormData';
 const LEGACY_FOLDERS = ['EWelfareData/QuickForm'];   // 예전 기본값 — 이미 쓰던 기관은 자동으로 이어서 씀
-const APP_VERSION = 'QF-5.8.0 · 10-26 17:30';
+const APP_VERSION = 'QF-5.8.1 · 10-26 18:30';
 const GRAPH = 'https://graph.microsoft.com/v1.0';
 /** 권한 범위: 기본 Sites.ReadWrite.All, 배포 링크에 &perm=selected 면 Sites.Selected(지정한 사이트만) */
 const scopeStr = () => `openid profile email offline_access https://graph.microsoft.com/${Infra.cfg.permSelected ? 'Sites.Selected' : 'Sites.ReadWrite.All'}`;
@@ -1172,7 +1172,7 @@ function piiParts(rid) {
 function mergePii(rid) { const P = PII[rid]; P.entries = Object.assign({}, ...Object.values(P.parts || {})); }
 async function mutatePii(rid, fn, fac = '') {
   const r = await Store.mutate(piiRel(rid, undefined, fac), () => ({ roundId: rid, facility: fac, entries: {} }), d => { d.entries ||= {}; return fn(d); });
-  const P = PII[rid] ||= { entries: {}, parts: {}, loaded: true }; P.parts ||= {};
+  const P = PII[rid] ||= { entries: {}, parts: {}, loaded: false }; P.parts ||= {};   // 한 시설분만 받았으니 나머지는 나중에 다시 읽음
   P.parts[fac] = r.data.entries || {}; mergePii(rid);
   return r.result;
 }
@@ -2243,8 +2243,8 @@ const DEFAULT_SCHEDULE = { on: true, base: [1], before: 2, time: '18:00' };   //
 const SAMPLE_PARKING_SCHEDULE = { on: true, base: [10, 25], before: 2, time: '18:00' };
 const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
 /** 기준일(매월 N일)이 주말·공휴일이면 직전 평일로 당김 */
-const shiftBack = (d, H) => { const x = new Date(d); while (!isBiz(x, H)) x.setDate(x.getDate() - 1); return x; };
-const shiftFwd = (d, H) => { const x = new Date(d); while (!isBiz(x, H)) x.setDate(x.getDate() + 1); return x; };
+const shiftBack = (d, H) => { const x = new Date(d); if (isNaN(x)) return x; for (let k = 0; k < 60 && !isBiz(x, H); k++) x.setDate(x.getDate() - 1); return x; };
+const shiftFwd = (d, H) => { const x = new Date(d); if (isNaN(x)) return x; for (let k = 0; k < 60 && !isBiz(x, H); k++) x.setDate(x.getDate() + 1); return x; };
 /**
  * 한 회차 계산 (예: 매월 10일·25일 구입)
  *  구입일   = 기준일, 주말·공휴일이면 직전 평일
@@ -2254,6 +2254,8 @@ const shiftFwd = (d, H) => { const x = new Date(d); while (!isBiz(x, H)) x.setDa
  */
 function computeCycle(sch, y, m, base, H = holidaySet()) {
   const bases = [...new Set((sch.base || []).map(Number).filter(n => n >= 1 && n <= 28))].sort((a, b) => a - b);
+  if (!bases.length) return null;
+  if (!bases.includes(base)) bases.push(base), bases.sort((a, b) => a - b);   // 규칙에서 빠진 기준일(예전 링크)도 날짜가 거꾸로 되지 않게
   const i = bases.indexOf(base);
   const baseD = new Date(y, m, base);
   const nextBase = i < bases.length - 1 ? new Date(y, m, bases[i + 1]) : new Date(y, m + 1, bases[0]);
@@ -2308,7 +2310,7 @@ function cyclesAround(sch, from, back, fwd, H = holidaySet()) {
     return out;
   }
   const bases = [...new Set((sch.base || []).map(Number).filter(n => n >= 1 && n <= 28))].sort((a, b) => a - b);
-  for (let k = -back; k <= fwd; k++) { const m0 = new Date(from.getFullYear(), from.getMonth() + k, 1); bases.forEach(b => out.push(computeCycle(sch, m0.getFullYear(), m0.getMonth(), b, H))); }
+  for (let k = -back; k <= fwd; k++) { const m0 = new Date(from.getFullYear(), from.getMonth() + k, 1); bases.forEach(b => { const c = computeCycle(sch, m0.getFullYear(), m0.getMonth(), b, H); if (c) out.push(c); }); }
   return out;
 }
 /** 오늘 이후 마감되는 회차 몇 개 (새 회차 만들기 목록) */
@@ -2454,7 +2456,7 @@ function applyCfg(s, r, staff = false) {
   if (r?.extra) {   // 행사 신청: 행사에서 정한 품목·하루 한도, 마감 시각은 그대로 보임
     const it = (r.items || []).map(id => s.items.find(i => i.id === id)).filter(Boolean);
     if (it.length) { c.s.it = it.map(i => i.link ? [i.id, i.name, pubPrice(s, i.price), i.link] : [i.id, i.name, pubPrice(s, i.price)]); delete c.s.pi; delete c.s.tr; c.s.hi = []; }
-    if (Number(r.perDay) > 0) { c.s.md = Number(r.perDay); delete c.s.pl; }
+    if (Number(r.perDay) > 0) { c.s.md = Number(r.perDay); delete c.s.pl; if (c.s.tr) c.s.tr = Object.fromEntries(Object.entries(c.s.tr).map(([k, v]) => [k, { i: v.i || [] }])); }
     if ((r.programs || []).length) c.s.pg = r.programs.filter(p => (s.programs || []).includes(p));
     delete c.s.hd;
   }
@@ -2486,7 +2488,7 @@ function applyCfg2(s) {
   const c = {
     v: 2, sid: s.id, i: DB.config.institutionName || '', c: DB.config.privacyContact || '', d: DB.config.piiRetentionDays || 14, ...(DB.config.consentText ? { ct: DB.config.consentText } : {}),
     b: (({ from, ...b }) => b)(svcBank(s)), h: DB.config.webhookUrl || '',
-    ...((DB.config.holidays || []).length ? { hol: DB.config.holidays } : {}), ...((DB.config.notHolidays || []).length ? { nh: DB.config.notHolidays } : {}),
+    ...(() => { const lo = ymd(addDays(now, -60)), hi = ymd(addDays(now, 150)), h = [...new Set([...holidaySet(), ...(DB.config.holidays || [])])].filter(d => d >= lo && d <= hi).sort(); return h.length ? { hol: h } : {}; })(), ...((DB.config.notHolidays || []).length ? { nh: DB.config.notHolidays } : {}),
     s: { n: s.name, ds: s.desc || '', pg: s.programs || [], ut: s.userTypes || [], ug: !!s.useGuardian, gr: !!s.isGrid, dy: s.days || [], it: formItems(s).map(i => i.link ? [i.id, i.name, pubPrice(s, i.price), i.link] : [i.id, i.name, pubPrice(s, i.price)]), mx: Number(s.maxTotal) || 0, qm: qtyMode(s), ...(s.maxPerDay ? { md: Number(s.maxPerDay) } : {}), ...(payMode(s) === 'none' ? { pm: 'n' } : {}), ...(phoneMode(s) !== 'req' ? { ph: phoneMode(s) } : {}), ...(addrMode(s) !== 'off' ? { ad: addrMode(s) } : {}), ...packFields(s), ...packFacs(s), mo: mode, ...(s.closedMsg ? { cm: s.closedMsg } : {}), ...pubPick(s), ...pubLimits(s), ...pubRules(s), ...(hideDl(s) ? { hd: 1 } : {}), ...(s.unit ? { un: s.unit } : {}), ...(s.qtyLabel ? { ql: s.qtyLabel } : {}), ...(s.formal ? { fm: 1 } : {}), ...(qtyPosOf(s) ? { qf: qtyPosOf(s) } : {}) }
   };
   c.sf = shortName(s);
@@ -2499,7 +2501,7 @@ function applyCfg2(s) {
   } else {
     c.rs = s.rounds.filter(r => !r.extra && !r.piiPurgedAt && (!r.deadline || parseDT(r.deadline) > addDays(now, -1))).map(r => ({ id: r.id, ...rr(r) }));
   }
-  const ex = eventRounds(s, now).map(r => ({ id: r.id, ...rr(r), ...(r.desc ? { ds: r.desc } : {}), ...((r.items || []).length ? { it: r.items.map(id => s.items.find(i => i.id === id)).filter(Boolean).map(i => i.link ? [i.id, i.name, pubPrice(s, i.price), i.link] : [i.id, i.name, pubPrice(s, i.price)]) } : {}), ...(Number(r.perDay) > 0 ? { md: Number(r.perDay) } : {}), ...((r.programs || []).length ? { pg: r.programs } : {}) }));
+  const ex = eventRounds(s, now).map(r => ({ id: r.id, ...rr(r), ...(r.desc ? { ds: r.desc } : {}), ...((r.items || []).length ? { it: r.items.map(id => s.items.find(i => i.id === id)).filter(Boolean).map(i => i.link ? [i.id, i.name, pubPrice(s, i.price), i.link] : [i.id, i.name, pubPrice(s, i.price)]) } : {}), ...(Number(r.perDay) > 0 ? { md: Number(r.perDay) } : {}), ...((r.programs || []).length ? { pg: r.programs.filter(p => (s.programs || []).includes(p)) } : {}) }));
   if (ex.length) c.ex = ex;
   return c;
 }
@@ -2590,7 +2592,7 @@ const ApplyForm = {
     el.innerHTML = `<div class="space-y-6 text-slate-800">
       ${(s.facilities || []).length ? `<section>${lbl(no(), '시설')}${chipGroup('ap-fac', s.facilities, s.facilities.length === 1 ? s.facilities[0] : '')}</section>` : ''}
       ${s.programs.length ? `<section>${lbl(no(), '관련 프로그램')}
-        <select data-f="program" class="${inCls}"><option value="">이용 중인 프로그램을 선택하세요</option>${s.programs.map(p => `<option ${s.programs.length === 1 ? 'selected' : ''}>${esc(p)}</option>`).join('')}</select></section>` : ''}
+        <select data-f="program" class="${inCls}"><option value="">이용 중인 프로그램을 선택하세요</option>${s.programs.map(p => `<option value="${esc(p)}" ${s.programs.length === 1 ? 'selected' : ''}>${esc(p)}</option>`).join('')}</select></section>` : ''}
       <section class="${types.length === 1 ? 'hidden' : ''}">${types.length === 1 ? '' : lbl(no(), '신청자 구분')}${chipGroup('ap-utype', types, types.length === 1 ? types[0] : '')}</section>
       ${s.useGuardian ? `<section data-proxybox class="hidden rounded-xl border border-ewelfare-200 bg-ewelfare-50/60 p-4 space-y-3">
         <label class="flex items-center gap-3 text-[15px] font-bold"><input type="checkbox" data-f="isProxy" class="w-5 h-5 accent-emerald-800"> 이용자의 보호자입니다 (대리 신청)</label>
@@ -2628,7 +2630,7 @@ const ApplyForm = {
           <select data-adddate class="${inCls} mt-2 !border-dashed !border-ewelfare-600 text-ewelfare-800 font-semibold"><option value="">＋ 이용하실 날짜 추가</option>${dates.map(d => `<option value="${esc(d)}">${esc(mdLabel(d))}</option>`).join('')}</select>` : '<p class="text-sm text-rose-600">이용 기간이 설정되지 않았습니다.</p>')
         : qm === 'weekday' ? `<div class="overflow-x-auto -mx-1"><table class="w-full text-sm table-fixed"><thead><tr><th class="w-[74px] text-left font-semibold pb-1">권종</th>${days.map(d => `<th class="font-semibold pb-1">${esc(d)}</th>`).join('')}</tr></thead>
           <tbody>${s.items.map(it => `<tr data-itemcell="${esc(it.id)}"><td class="py-1 pr-1 leading-tight"><b>${esc(it.name)}</b>${it.price ? `<br><span class="text-[11px] text-slate-500">${won(it.price)}원</span>` : ''}</td>${days.map(d => `<td class="p-0.5">${qtyIn(it.id, d)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`
-        : pick ? `<div class="space-y-2">${s.items.map(it => `<label class="flex items-center gap-3 border-2 border-slate-200 rounded-xl px-3 py-3 cursor-pointer has-[:checked]:border-ewelfare-700 has-[:checked]:bg-ewelfare-50"><input type="radio" name="ap-pick" value="${esc(it.id)}" class="w-5 h-5 accent-emerald-800"><span class="flex-1"><b>${esc(it.name)}</b>${it.price ? ` <span class="text-sm text-slate-500">${won(it.price)}원</span>` : ''}</span>${it.link ? `<a href="${esc(it.link)}" target="_blank" rel="noopener" class="shrink-0 text-sm text-ewelfare-700 underline">상품 보기</a>` : ''}</label>`).join('')}</div>`
+        : pick ? `<div class="space-y-2">${s.items.map(it => `<label data-itemcell="${esc(it.id)}" class="flex items-center gap-3 border-2 border-slate-200 rounded-xl px-3 py-3 cursor-pointer has-[:checked]:border-ewelfare-700 has-[:checked]:bg-ewelfare-50"><input type="radio" name="ap-pick" value="${esc(it.id)}" class="w-5 h-5 accent-emerald-800"><span class="flex-1"><b>${esc(it.name)}</b>${it.price ? ` <span class="text-sm text-slate-500">${won(it.price)}원</span>` : ''}</span>${it.link ? `<a href="${esc(it.link)}" target="_blank" rel="noopener" class="shrink-0 text-sm text-ewelfare-700 underline">상품 보기</a>` : ''}</label>`).join('')}</div>`
         : `<div class="space-y-2">${s.items.map(it => `<div data-itemcell="${esc(it.id)}" class="flex items-center justify-between gap-3 border border-slate-200 rounded-lg px-3 py-2"><span><b>${esc(it.name)}</b>${it.link ? ` <a href="${esc(it.link)}" target="_blank" rel="noopener" class="text-sm text-ewelfare-700 underline">상품 보기</a>` : ''}${it.price ? ` <span class="text-sm text-slate-500">${won(it.price)}원</span>` : ''}</span><span class="w-20">${qtyIn(it.id)}</span></div>`).join('')}</div>`}
         <div class="mt-3 rounded-lg bg-slate-900 text-white px-4 py-3 flex items-center justify-between ${pick && !showAmt ? 'hidden' : ''}">
           <span class="text-sm">합계 <b data-cnt>0</b>${U}</span>
@@ -2677,7 +2679,7 @@ const ApplyForm = {
       const prog = el.querySelector('[data-f="program"]')?.value || '', ut = el.querySelector('input[name="ap-utype"]:checked')?.value || '';
       // 구분 규칙(강사·직원 등)이 있으면 그 품목 / 없으면 프로그램 규칙 / 프로그램을 고르기 전에는 모든 프로그램에서 되는 품목만
       const ok = (TR[ut]?.items || []).length ? TR[ut].items : prog ? forP(prog) : all.filter(id => (s.programs || []).every(p => forP(p).includes(id)));
-      el.querySelectorAll('[data-itemcell]').forEach(c => { const on = ok.includes(c.dataset.itemcell); c.hidden = !on; if (!on) c.querySelectorAll('[data-q]').forEach(q => { q.value = '0'; }); });
+      el.querySelectorAll('[data-itemcell]').forEach(c => { const on = ok.includes(c.dataset.itemcell); c.hidden = !on; if (!on) { c.querySelectorAll('[data-q]').forEach(q => { q.value = '0'; }); c.querySelectorAll('input[name="ap-pick"]').forEach(r => { r.checked = false; }); } });
       el.querySelectorAll('[data-itemgrid]').forEach(g => { g.style.gridTemplateColumns = `repeat(${Math.max(1, Math.min(ok.length, 3))},minmax(0,1fr))`; });
     };
     const sync = (ev) => {
@@ -2820,7 +2822,7 @@ function validateApply(s, o) {
   if (!cnt) return '수량 없음';
   if (max && cnt > max) return `합계 ${max} 초과`;
   const PXv = personMaxOf(s, findRoundByRid(s, o.rid)); if (PXv && cnt > PXv && !o.staffEntry) return `1인 회차 한도 ${PXv} 초과`;
-  const lim = Number(EV?.perDay) > 0 ? Number(EV.perDay) : dayLimit(s, o.program, o.userType);
+  const lim = Number(EV?.perDay) > 0 ? Number(EV.perDay) : (EV?.items || []).length ? (Number((s.programLimits || {})[o.program]) || Number(s.maxPerDay) || 0) : dayLimit(s, o.program, o.userType);   // 신청서(행사 화면)와 같은 규칙
   if (lim && qtyMode(s) !== 'total') { const days = {}; Object.values(o.dayQty || {}).forEach(m => Object.entries(m || {}).forEach(([d, n]) => { days[d] = (days[d] || 0) + parseQty(n); })); if (Object.values(days).some(n => n > lim)) return `하루 ${lim} 초과`; }
   if (qtyMode(s) === 'date') { const r = findRoundByRid(s, o.rid), ok = new Set(r ? roundDates(s, r) : []); for (const m of Object.values(o.dayQty || {})) for (const k of Object.keys(m || {})) if (!ok.has(k)) return '신청할 수 없는 날짜'; }
   if (!o.consent) return '동의 없음';
@@ -2880,8 +2882,9 @@ async function processInbox(force = false) {
     const seen = new Set(DB.applications.map(a => a.sourceKey).filter(Boolean));
     const LIM = Math.max(1, Number(DB.config.holdLimit) || 3);   // 같은 회차에 같은 연락처(없으면 성명)로 이만큼 넘으면 보류
     const who = o => (o.phone ? 'p' + String(o.phone).replace(/\D/g, '') : 'n' + norm(o.name || ''));
-    const cnt = {}, used = {};
-    DB.applications.forEach(a => { const p = piiOf(a); if (!p || a.isPurged) return; const k = a.roundId + '|' + who(p); used[k] = (used[k] || 0) + qtySum(a); if (a.source !== 'web' && !String(a.sourceKey || '').startsWith('web:')) return; cnt[k] = (cnt[k] || 0) + 1; });
+    const cnt = {}, used = {}, counted = new Set();
+    // 회차별로 개인정보를 불러와 1인 한도·반복 신청을 셈 (화면에 열린 회차만이 아니라 신청이 들어온 회차 모두)
+    const countRound = async rid => { if (counted.has(rid)) return; counted.add(rid); await loadPii(rid).catch(() => { }); DB.applications.filter(a => a.roundId === rid).forEach(a => { const p = piiOf(a); if (!p || a.isPurged) return; const k = a.roundId + '|' + who(p); used[k] = (used[k] || 0) + qtySum(a); if (a.source !== 'web' && !String(a.sourceKey || '').startsWith('web:')) return; cnt[k] = (cnt[k] || 0) + 1; }); };
     for (const f of files.slice(0, 200)) {
       if ((f.size || 0) > 20000) { if (isAdmin()) { rejected.push('크기 초과'); del.push(f.name); } continue; }
       let txt = '';
@@ -2894,15 +2897,20 @@ async function processInbox(force = false) {
       if (!s) { if (isAdmin()) { rejected.push('없는 서비스'); del.push(f.name); } continue; }
       if (!canService(s) && !(MODE === 'kiosk' && svcKiosk(s).includes(me()))) continue;   // 태블릿 계정도 맡은 서비스 신청은 가져옴
       let rr = findRoundByRid(s, o.rid);
-      if (!rr && /^A-\d{4}-\d{2}-\d{2}$/.test(o.rid) && svcMode(s) === 'auto') { await ensureAutoRounds([o.rid.slice(2)]); rr = findRoundByRid(curDBsvc(s.id), o.rid); }
+      if (!rr && /^A-\d{4}-\d{2}-\d{2}$/.test(o.rid) && svcMode(s) === 'auto') {   // 규칙에 맞고 가까운 회차만 새로 만듦 (조작된 링크로 아무 날짜나 만들지 못하게)
+        const b = o.rid.slice(2), near = cyclesAround(s.schedule, new Date(), 2, 4).some(c => c.base === b);
+        if (onSchedule(s.schedule, b) && near) { await ensureAutoRounds([b]); rr = findRoundByRid(curDBsvc(s.id), o.rid); }
+      }
       if (!rr || rr.piiPurgedAt) { rejected.push('종료된 회차'); del.push(f.name); continue; }
       const arrived = f.createdDateTime ? new Date(f.createdDateTime) : null, rdl = parseDT(rr.deadline);
-      if (arrived && rdl && arrived > new Date(rdl.getTime() + 60000)) { rejected.push('마감 후 도착'); del.push(f.name); continue; }
+      if (arrived && rdl && arrived > new Date(rdl.getTime() + 10 * 60000)) { rejected.push('마감 후 도착'); del.push(f.name); continue; }   // 워크플로 지연 10분까지는 받고 '마감 후' 표시
       if (seen.has(`web:${o.id}`)) { del.push(f.name); continue; }
-      const why = validateApply(s, o);
+      const sv = curDBsvc(s.id) || s;   // 회차를 새로 만들었으면 바뀐 DB 기준으로 검사
+      const why = validateApply(sv, o);
       if (why) { rejected.push(why); del.push(f.name); continue; }
+      await countRound(rr.id);
       const ck = rr.id + '|' + who(o);
-      const nq = Object.values(o.itemQty || {}).reduce((x, y) => x + parseQty(y), 0), PXm = personMaxOf(s, rr);
+      const nq = Object.values(o.itemQty || {}).reduce((x, y) => x + parseQty(y), 0), PXm = personMaxOf(sv, rr);
       if (!o.allowHold && ((cnt[ck] || 0) >= LIM || (PXm && (used[ck] || 0) + nq > PXm) || blockedOf(o))) { hold.push({ name: f.name, txt }); continue; }
       cnt[ck] = (cnt[ck] || 0) + 1; used[ck] = (used[ck] || 0) + nq;
       seen.add(`web:${o.id}`);
@@ -3224,15 +3232,15 @@ async function renderApplyPage2(code, pick = '') {
   const back = () => { if (!events.length) return; const h = document.querySelector('header'); if (!h) return; h.insertAdjacentHTML('beforebegin', '<button type="button" data-qf-back class="mb-3 text-sm font-semibold text-ewelfare-700"><i class="fa-solid fa-arrow-left"></i> 다른 신청 고르기</button>'); document.querySelector('[data-qf-back]').onclick = () => { scrollTo(0, 0); renderApplyPage2(code); }; };
   const ev = pick && events.find(e => e.id === pick);
   if (ev) {
-    const s1 = { ...c.s, n: `${ev.name}${/주차권/.test(ev.name) ? ' 신청' : ' 주차권 신청'}`, ds: '', nt: '', ...(ev.pg ? { pg: ev.pg } : {}), dt: c.s.qm === 'date' ? roundDates({ days: c.s.dy, validStart: '' }, ev, H) : undefined, hd: 0, ...(ev.it ? { it: ev.it, pi: undefined, tr: undefined, hi: [] } : {}), ...(ev.md ? { md: ev.md, pl: undefined, tr: ev.it ? undefined : c.s.tr } : {}), ...(ev.personMax > 0 ? { px: ev.personMax } : {}) };
+    const s1 = { ...c.s, n: `${ev.name}${/신청$/.test(ev.name) ? '' : ' 신청'}`, ds: '', nt: '', ...(ev.pg ? { pg: ev.pg } : {}), dt: c.s.qm === 'date' ? roundDates({ days: c.s.dy, validStart: '' }, ev, H) : undefined, hd: 0, ...(ev.it ? { it: ev.it, pi: undefined, tr: undefined, hi: [] } : {}), ...(ev.md ? { md: ev.md, pl: undefined, tr: ev.it ? undefined : Object.fromEntries(Object.entries(c.s.tr || {}).map(([k, v]) => [k, { i: v.i || [] }])) } : {}), ...(ev.personMax > 0 ? { px: ev.personMax } : {}) };
     const c1 = { ...c, v: 1, rid: ev.id, s: s1, r: { n: ev.name, dl: ev.deadline, vs: ev.validStart, ve: ev.validEnd, ps: ev.pickupStart, pe: ev.pickupEnd } };
-    renderApplyCore(c1, { notice: [ev.desc || '행사 참석자만 신청해 주세요.', '주차권은 다른 분께 양도하실 수 없어요. 프로그램 담당 선생님께 대신 부탁하실 수 없어요.'].join(' '), onClosed: () => renderApplyPage2(code) }); back(); return;
+    renderApplyCore(c1, { notice: ev.desc || '행사 참석자만 신청해 주세요.', onClosed: () => renderApplyPage2(code) }); back(); return;
   }
   if (events.length && pick !== 'reg') {
     const evCard = e => `<button type="button" data-pick="${esc(e.id)}" class="w-full text-left bg-white rounded-2xl border-2 border-amber-300 hover:border-amber-500 p-5 space-y-1.5"><span class="inline-block text-[11px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">행사</span><p class="font-extrabold text-lg">${esc(e.name)}</p>${e.desc ? `<p class="text-sm text-slate-700 whitespace-pre-line">${esc(e.desc)}</p>` : ''}<p class="text-sm text-rose-600 font-semibold">신청 마감: ${esc(krDateTime(e.deadline))}</p><p class="text-sm text-slate-600">이용 날짜: ${esc(krRange(e.validStart, e.validEnd))}</p></button>`;
     const regCard = regOpen ? `<button type="button" data-pick="reg" class="w-full text-left bg-white rounded-2xl border-2 border-ewelfare-200 hover:border-ewelfare-600 p-5 space-y-1.5"><span class="inline-block text-[11px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">정기</span><p class="font-extrabold text-lg">${esc(cur.name)}</p>${periodText(cur, true, true).slice(0, 2).map(x => `<p class="text-sm text-slate-600">${esc(x)}</p>`).join('')}</button>`
       : `<div class="rounded-2xl border border-dashed p-4 text-sm text-slate-500"><b>정기 신청</b>은 지금 받지 않아요.${past ? ` (${esc(past.name)} 신청 마감)` : ''}</div>`;
-    shell(`<div class="space-y-3"><p class="font-bold text-slate-800">어떤 주차권을 신청하시나요?</p>${events.map(evCard).join('')}${regCard}</div>`);
+    shell(`<div class="space-y-3"><p class="font-bold text-slate-800">어떤 신청을 하시나요?</p>${events.map(evCard).join('')}${regCard}</div>`);
     document.querySelectorAll('[data-pick]').forEach(b => b.onclick = () => { scrollTo(0, 0); renderApplyPage2(code, b.dataset.pick); });
     return;
   }
@@ -3289,7 +3297,7 @@ function renderApplyCore(c, opts = {}) {
   const openedAt = Date.now();
   const btn = document.getElementById('ap-submit');
   btn.onclick = async () => {
-    if (dl && new Date() > dl) { if (opts.onClosed) { await UI.alert(`${r.name} 신청이 방금 마감되었어요.`, '신청 마감'); return opts.onClosed(); } root.innerHTML = closedHtml(); document.querySelector('.fixed.bottom-0')?.remove(); window.scrollTo(0, 0); return; }
+    if (dl && new Date() > dl) { if (opts.onClosed) { await UI.alert(`${esc(r.name)} 신청이 방금 마감되었어요.`, '신청 마감'); return opts.onClosed(); } root.innerHTML = closedHtml(); document.querySelector('.fixed.bottom-0')?.remove(); window.scrollTo(0, 0); return; }
     let data; try { data = form.collect(); } catch { return; }
     const dupKey = `qf:sent:${c.rid}:${data.phone ? String(data.phone).replace(/\D/g, '') : 'n:' + norm(data.name)}`;
     if (LS.get(dupKey) && !await UI.confirm(`${data.phone ? '이 휴대폰 번호로' : `${esc(data.name)} 님 이름으로`} 이번 회차에 이미 신청하셨습니다.\n한 번 더 신청할까요?`, { okText: '추가 신청' })) return;
@@ -3703,11 +3711,11 @@ async function kioskApply(rid = '') {
   const btn = ov.querySelector('[data-submit]');
   btn.onclick = async () => {
     let data; try { data = form.collect(); } catch { return; }
-    if (parseDT(r.deadline) <= new Date()) { await UI.alert(`${r.name} 신청이 방금 마감되었어요. 처음 화면에서 다시 신청해 주세요.`, '신청 마감'); close(); renderAll(); return; }
+    if (parseDT(r.deadline) <= new Date()) { await UI.alert(`${esc(r.name)} 신청이 방금 마감되었어요. 처음 화면에서 다시 신청해 주세요.`, '신청 마감'); close(); renderAll(); return; }
     const o = { ...data, rid: r.id, consent: true, consentAt: ymdhm(), submittedAt: ymdhm() };
     const mf = myFacs(s, true); if (!o.facility && Array.isArray(mf) && mf.length === 1) o.facility = mf[0];
     const err = validateApply(s, o); if (err) return UI.alert(`신청을 저장하지 못했어요 (${esc(err)}).`);
-    if (blockedOf(o)) return UI.alert('지금은 주차권 구입이 제한되어 있어요.\n운영지원팀에 문의해 주세요.', '구입 제한');
+    if (blockedOf(o)) return UI.alert(`지금은 신청이 제한되어 있어요.\n${esc([DB.config.institutionName, DB.config.privacyContact].filter(Boolean).join(' ') || '기관')}에 문의해 주세요.`, '신청 제한');
     const PXk = personMaxOf(s, r); if (PXk) { await loadPii(r.id, true).catch(() => { }); const u = personQty(r.id, whoKey(o)), nq = qtySum(o); if (u + nq > PXk) return UI.alert(`한 분이 ${esc(r.name)}에 신청할 수 있는 주차권은 최대 ${PXk}장이에요.\n이미 ${u}장을 신청하셔서 ${Math.max(0, PXk - u)}장까지 더 신청할 수 있어요.`, '신청 한도'); }
     const x = appFromApply(s, r.id, o, 'kiosk');
     btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-circle-notch spin"></i> 저장 중…';
