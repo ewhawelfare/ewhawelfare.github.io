@@ -450,7 +450,7 @@ const APP_NAME = 'QuickForm';
 /** SharePoint 문서 라이브러리 안의 저장 폴더 기본값. 기관마다 배포 링크에 &folder=경로 로 바꿀 수 있음 */
 const DATA_FOLDER = 'QuickFormData';
 const LEGACY_FOLDERS = ['EWelfareData/QuickForm'];   // 예전 기본값 — 이미 쓰던 기관은 자동으로 이어서 씀
-const APP_VERSION = 'QF-5.7.0 · 10-26 14:30';
+const APP_VERSION = 'QF-5.7.1 · 10-26 15:00';
 const GRAPH = 'https://graph.microsoft.com/v1.0';
 /** 권한 범위: 기본 Sites.ReadWrite.All, 배포 링크에 &perm=selected 면 Sites.Selected(지정한 사이트만) */
 const scopeStr = () => `openid profile email offline_access https://graph.microsoft.com/${Infra.cfg.permSelected ? 'Sites.Selected' : 'Sites.ReadWrite.All'}`;
@@ -1461,7 +1461,8 @@ function autoPublish(ids = null, { quiet = false } = {}) {
   _pubBusy = (async () => {
     const done = [];
     for (const s of DB.services) {
-      if ((ids && !ids.includes(s.id)) || !canService(s) || !s.shortUrl || !isOwnShort(s.shortUrl)) continue;
+      if ((ids && !ids.includes(s.id)) || !canService(s) || s.formsUrl || (s.shortUrl && !isOwnShort(s.shortUrl))) continue;
+      if (!s.shortUrl) { const u = ownShortUrl(shortName(s)); await mutateMain(d => { const x = findSvc(d, s.id); if (x && !x.shortUrl) x.shortUrl = u; }); s.shortUrl = u; }   // 새 서비스: 짧은 주소를 자동으로 정해 처음부터 같은 QR
       const sig = await cfgSig(s); if (s.shortSig === sig && s.linkSig === sig) continue;
       await ghPut(shortName(s), shortFileHtml(s, await applyLink2(s), sig), `QuickForm: ${s.name} 신청 링크 갱신`);
       await mutateMain(d => { const x = findSvc(d, s.id); if (x) { x.shortSig = sig; x.linkSig = sig; } });
@@ -3071,6 +3072,7 @@ async function openGuideKit(sv) {
 async function openQr() {
   const s = curSvc();
   const hook = DB.config.webhookUrl;
+  if (hook && ghOn()) await wrap(() => autoPublish([s.id], { quiet: true }), '신청 링크 파일 확인 중…');
   if (hook) {
     const st = await wrap(() => lockState(s, true), '개인정보 폴더 확인 중…');
     if (st && st.ok === false) {
