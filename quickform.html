@@ -450,7 +450,7 @@ const APP_NAME = 'QuickForm';
 /** SharePoint 문서 라이브러리 안의 저장 폴더 기본값. 기관마다 배포 링크에 &folder=경로 로 바꿀 수 있음 */
 const DATA_FOLDER = 'QuickFormData';
 const LEGACY_FOLDERS = ['EWelfareData/QuickForm'];   // 예전 기본값 — 이미 쓰던 기관은 자동으로 이어서 씀
-const APP_VERSION = 'QF-5.5.1 · 10-26 12:00';
+const APP_VERSION = 'QF-5.6.0 · 10-26 13:30';
 const GRAPH = 'https://graph.microsoft.com/v1.0';
 /** 권한 범위: 기본 Sites.ReadWrite.All, 배포 링크에 &perm=selected 면 Sites.Selected(지정한 사이트만) */
 const scopeStr = () => `openid profile email offline_access https://graph.microsoft.com/${Infra.cfg.permSelected ? 'Sites.Selected' : 'Sites.ReadWrite.All'}`;
@@ -1417,6 +1417,73 @@ function renderLinkedApps() {
   const L = linkedApps();
   box.innerHTML = L.length ? `<div class="text-[11px] font-semibold text-ewelfare-400 px-3 pt-4 pb-1 tracking-wider">다른 업무</div>${L.map(x => `<a href="${esc(x.url)}" class="nav-btn" title="${esc(x.url)}"><i class="fa-solid fa-arrow-up-right-from-square w-4 text-center"></i><span>${esc(x.name)}</span></a>`).join('')}` : '';
 }
+/* ---------- 신청 링크 파일 자동 게시 (GitHub Pages) ----------
+   양식을 고쳐 저장하면 QR·링크가 여는 짧은 주소 파일(예: parking.html)을 GitHub에 바로 다시 올림.
+   토큰: 이 저장소 Contents 읽기·쓰기만 허용한 fine-grained token (총괄관리자가 [설정]에 입력) */
+const ghCfg = () => { const g = DB?.config?.ghPublish || {}, host = location.hostname, def = /\.github\.io$/i.test(host) ? `${host.split('.')[0]}/${host}` : ''; return { repo: g.repo || def, branch: g.branch || 'main', token: g.token || '', dir: (g.dir ?? location.pathname.replace(/^\/+/, '').replace(/[^/]*$/, '')).replace(/^\/+|\/+$/g, '') }; };
+const ghOn = () => { const g = ghCfg(); return !!(g.token && /^[\w.-]+\/[\w.-]+$/.test(g.repo)); };
+async function ghApi(path, opt = {}, g = ghCfg()) {
+  const r = await fetch(`https://api.github.com${path}`, { ...opt, cache: 'no-store', headers: { Authorization: `Bearer ${g.token}`, Accept: 'application/vnd.github+json', ...(opt.body ? { 'Content-Type': 'application/json' } : {}) } });
+  if (!r.ok && r.status !== 404) { let m = ''; try { m = (await r.json()).message || ''; } catch { } throw new Error(r.status === 401 ? '토큰이 맞지 않거나 만료되었습니다' : r.status === 403 ? `권한이 없습니다(${m})` : `GitHub ${r.status} ${m}`); }
+  return r;
+}
+async function ghPut(file, text, msg, g = ghCfg()) {
+  const path = (g.dir ? g.dir + '/' : '') + file, url = `/repos/${g.repo}/contents/${path.split('/').map(encodeURIComponent).join('/')}`;
+  const bytes = new TextEncoder().encode(text); let bin = ''; for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  for (let k = 0; k < 2; k++) {
+    const r0 = await ghApi(`${url}?ref=${encodeURIComponent(g.branch)}&t=${Date.now()}`, {}, g), sha = r0.status === 404 ? null : (await r0.json()).sha;
+    const r = await fetch(`https://api.github.com${url}`, { method: 'PUT', headers: { Authorization: `Bearer ${g.token}`, Accept: 'application/vnd.github+json', 'Content-Type': 'application/json' }, body: JSON.stringify({ message: msg, content: btoa(bin), branch: g.branch, ...(sha ? { sha } : {}) }) });
+    if (r.ok) return true;
+    if ((r.status === 409 || r.status === 422) && !k) continue;   // 동시에 다른 PC가 올린 경우 한 번 더
+    let m = ''; try { m = (await r.json()).message || ''; } catch { } throw new Error(r.status === 401 ? '토큰이 맞지 않거나 만료되었습니다' : `GitHub ${r.status} ${m}`);
+  }
+}
+/** 설정이 바뀐 서비스의 신청 링크 파일을 다시 올림 (자동 게시가 켜져 있을 때) */
+let _pubBusy = null;
+function autoPublish(ids = null, { quiet = false } = {}) {
+  if (!ghOn() || !DB?.config?.webhookUrl) return Promise.resolve([]);
+  if (_pubBusy) return _pubBusy.then(() => autoPublish(ids, { quiet }));
+  _pubBusy = (async () => {
+    const done = [];
+    for (const s of DB.services) {
+      if ((ids && !ids.includes(s.id)) || !canService(s) || !s.shortUrl || !isOwnShort(s.shortUrl)) continue;
+      const sig = await cfgSig(s); if (s.shortSig === sig && s.linkSig === sig) continue;
+      await ghPut(shortName(s), shortFileHtml(s, await applyLink2(s), sig), `QuickForm: ${s.name} 신청 링크 갱신`);
+      await mutateMain(d => { const x = findSvc(d, s.id); if (x) { x.shortSig = sig; x.linkSig = sig; } });
+      done.push(s.name);
+    }
+    if (done.length && !quiet) UI.toast(`QR·신청 링크에도 반영했습니다 (${done.join(', ')}). 1~2분 뒤부터 새 내용이 보입니다.`, 'ok');
+    if (done.length) renderAll();
+    return done;
+  })().catch(e => { if (!quiet) UI.toast(`QR·신청 링크 자동 반영 실패: ${e.message}. [설정 → GitHub 자동 게시]를 확인하세요.`, 'err'); console.warn('autoPublish', e); return []; }).finally(() => { _pubBusy = null; });
+  return _pubBusy;
+}
+async function editGhPublish() {
+  const g = ghCfg();
+  await UI.dialog({
+    title: '<i class="fa-brands fa-github mr-1"></i> GitHub 자동 게시', okText: '저장',
+    html: `<div class="space-y-2 text-xs">
+      <p>양식을 고쳐 <b>저장하면</b> QR·신청 링크가 여는 파일(예: parking.html)을 GitHub에 <b>자동으로 다시 올립니다</b>. 1~2분 뒤부터 원래 QR로도 새 내용이 보입니다.</p>
+      <label class="block">저장소<input data-g="repo" value="${esc(g.repo)}" class="qf-in mt-1 font-mono" placeholder="기관계정/기관계정.github.io"></label>
+      <div class="grid grid-cols-2 gap-2"><label>브랜치<input data-g="branch" value="${esc(g.branch)}" class="qf-in mt-1 font-mono"></label><label>폴더${H('앱 파일(quickform.html)이 있는 폴더. 맨 위면 비워 둡니다.')}<input data-g="dir" value="${esc(g.dir)}" class="qf-in mt-1 font-mono" placeholder="(맨 위)"></label></div>
+      <label class="block">토큰${H('GitHub → Settings → Developer settings → Fine-grained tokens → Generate new token\n· Resource owner: 기관 계정\n· Repository access: Only select repositories → 이 저장소 하나\n· Permissions → Repository → Contents: Read and write\n만료일이 지나면 새로 만들어 다시 넣어 주세요.')}<input data-g="token" type="password" autocomplete="off" class="qf-in mt-1 font-mono" placeholder="${g.token ? '저장됨 — 바꿀 때만 새로 입력' : 'github_pat_…'}"></label>
+      <p class="text-slate-500">토큰은 직원 전용 SharePoint 설정 파일에 저장됩니다. 이 저장소 파일 쓰기만 허용한 토큰을 쓰세요. 비우고 저장하면 지금 토큰을 그대로 둡니다. 끄려면 저장소 칸을 비우세요.</p>
+      <div class="flex items-center gap-2"><button type="button" data-g-test class="qf-btn !py-1 bg-white border">연결 확인</button><span data-g-msg class="text-slate-600"></span></div></div>`,
+    onOpen(b) {
+      const read = () => ({ repo: b.querySelector('[data-g="repo"]').value.trim(), branch: b.querySelector('[data-g="branch"]').value.trim() || 'main', dir: b.querySelector('[data-g="dir"]').value.trim(), token: b.querySelector('[data-g="token"]').value.trim() || g.token });
+      b._read = read;
+      b.querySelector('[data-g-test]').onclick = async () => { const m = b.querySelector('[data-g-msg]'), x = read(); m.textContent = '확인 중…'; try { const r = await ghApi(`/repos/${x.repo}`, {}, x); if (r.status === 404) throw new Error('저장소를 찾을 수 없습니다(이름 또는 토큰 권한 확인)'); const j = await r.json(); m.textContent = j.permissions?.push ? '✔ 연결됨 — 파일을 올릴 수 있습니다.' : '✖ 이 토큰으로는 파일을 올릴 수 없습니다(Contents 쓰기 권한 필요).'; } catch (e) { m.textContent = '✖ ' + e.message; } };
+    },
+    async collect(b) {
+      const x = b._read();
+      if (x.repo && !/^[\w.-]+\/[\w.-]+$/.test(x.repo)) throw new Error('저장소는 "계정/저장소" 형식으로 적어 주세요.');
+      await mutateMain(d => { if (!isAdmin(d)) throw new Error('총괄관리자만 바꿀 수 있습니다.'); d.config.ghPublish = x.repo ? x : {}; });
+      return true;
+    }
+  });
+  renderAll();
+  if (ghOn()) autoPublish();
+}
 async function editLinkedApps() {
   await UI.dialog({
     title: '<i class="fa-solid fa-link mr-1"></i> 연결된 앱', okText: '저장',
@@ -2340,7 +2407,7 @@ async function openEventRound() {
       let id = r0?.id;
       await mutateMain(d => { const x = findSvc(d, s.id); if (r0) { const r = x.rounds.find(y => y.id === r0.id); if (r) Object.assign(r, o, ex, { edited: true }); } else { const nr = { ...newRound(o), personMax: o.personMax, ...ex }; id = nr.id; x.rounds.push(nr); } });
       VIEW.roundId = id; saveView(); renderAll();
-      UI.toast(r0 ? '행사 신청을 고쳤습니다.' : '행사 신청을 열었습니다. [신청 링크·QR]에서 짧은 주소 파일을 새로 만들어 올려 주세요.'); return true;
+      UI.toast(r0 ? '행사 신청을 고쳤습니다.' : ghOn() ? '행사 신청을 열었습니다.' : '행사 신청을 열었습니다. [신청 링크·QR]에서 짧은 주소 파일을 새로 만들어 올려 주세요.'); autoPublish([s.id]); return true;
     }
   });
 }
@@ -3904,6 +3971,7 @@ function renderConfig() {
     ${isAdmin() ? `<details class="mt-1.5 rounded-lg border border-slate-200 bg-white"><summary class="cursor-pointer px-2 py-1.5 font-semibold text-slate-700"><i class="fa-solid fa-toolbox text-slate-400"></i> 처음 한 번만 하는 설치·연동 <span class="font-normal text-slate-400">(설정 파일 · 다른 앱 · Teams)</span></summary>
       <div class="divide-y border-t">
         <div class="flex flex-wrap items-center gap-1.5 px-2 py-1.5"><span class="w-32 shrink-0 font-semibold whitespace-nowrap">직원용 설정 파일${H(`새 PC·태블릿에서 앱 주소만 열어도 연결되게 하는 작은 파일(${cfgFileName()}). 앱 파일과 같은 폴더에 한 번 올리면 끝. 연결 정보(테넌트·사이트)가 바뀔 때만 다시 만듭니다. 로그인·개인정보는 들어 있지 않습니다.`)}</span><button onclick="makeConfigFile()" class="qf-btn !py-0.5 bg-white border">만들기</button><button onclick="checkConfigFile()" class="qf-btn !py-0.5 bg-white border">올린 파일 확인</button></div>
+        <div class="flex flex-wrap items-center gap-1.5 px-2 py-1.5"><span class="w-32 shrink-0 font-semibold whitespace-nowrap">GitHub 자동 게시${H('양식을 저장하면 QR·신청 링크 파일을 GitHub에 자동으로 다시 올립니다. 원래 QR로 바로 새 내용을 볼 수 있습니다.')}</span><span class="${ghOn() ? 'text-emerald-700 font-semibold' : 'text-slate-500'}">${ghOn() ? `켜짐 · ${esc(ghCfg().repo)}` : '꺼짐'}</span><button onclick="editGhPublish()" class="qf-btn !py-0.5 bg-white border">설정</button></div>
         <div class="flex flex-wrap items-center gap-1.5 px-2 py-1.5"><span class="w-32 shrink-0 font-semibold whitespace-nowrap">연결된 앱${H('같은 기관의 다른 업무 앱(예: 통합업무시스템)으로 가는 메뉴를 왼쪽 아래에 둡니다.')}</span><span class="text-slate-600">${linkedApps().length ? linkedApps().map(x => esc(x.name)).join(', ') : '없음'}</span><button onclick="editLinkedApps()" class="qf-btn !py-0.5 bg-white border">편집</button></div>
         <div class="flex flex-wrap items-center gap-1.5 px-2 py-1.5"><span class="w-32 shrink-0 font-semibold whitespace-nowrap">Teams 앱${H('직원 관리 화면을 Teams 왼쪽 앱으로 쓰게 하는 설치 파일(zip). Teams 관리 센터 → Teams 앱 → 앱 관리 → [작업] → 새 앱 업로드로 한 번 올리면 끝. Teams로 쓰지 않으면 필요 없습니다.')}</span><button onclick="makeTeamsPackage()" class="qf-btn !py-0.5 bg-white border">패키지 만들기</button></div>
       </div></details>` : ''}`;
@@ -4051,7 +4119,7 @@ async function saveConfig() {
   if (v.defaultKiosk.some(x => !EMAIL_RE.test(x))) return UI.toast('기본 태블릿 계정은 이메일 형식으로 넣어 주세요.', 'err');
   const newKiosk = v.defaultKiosk.filter(x => !lcList(DB.config.defaultKiosk).includes(x));
   const acctChanged = v.intakeAccount !== (DB.config.intakeAccount || '');
-  await wrap(async () => { await mutateMain(d => { if (!isAdmin(d)) throw new Error('총괄관리자만 변경할 수 있습니다.'); Object.assign(d.config, v); }); HOL.dirty = false; UI.toast('기본 설정을 저장했습니다.'); });
+  await wrap(async () => { await mutateMain(d => { if (!isAdmin(d)) throw new Error('총괄관리자만 변경할 수 있습니다.'); Object.assign(d.config, v); }); HOL.dirty = false; UI.toast('기본 설정을 저장했습니다.'); }); autoPublish();
   if (newKiosk.length && DB.services.some(s => newKiosk.some(k => !lcList(s.kioskUsers).includes(k))) && await UI.confirm(`기본 태블릿 계정(${newKiosk.map(esc).join(', ')})을 지금 있는 서비스 ${DB.services.length}개에도 넣고 폴더 권한을 맞출까요?`, { okText: '모두 넣기' })) {
     await wrap(async () => {
       await mutateMain(d => { d.services.forEach(s => { s.kioskUsers = [...new Set([...lcList(s.kioskUsers), ...newKiosk])]; }); });
@@ -4487,6 +4555,7 @@ async function openServiceEditor(id) {
       });
       if (isNew) { VIEW.serviceId = s0.id; VIEW.roundId = s0.currentRoundId; saveView(); renderAll(); }
       UI.toast('저장했습니다.');
+      autoPublish([s0.id]);
       // 담당자·태블릿 계정이 바뀌었거나 새 서비스면 SharePoint 폴더 권한을 자동으로 맞춤 (총괄관리자)
       const saved = findSvc(DB, s0.id);
       if (isAdmin() && saved && (isNew || permKey(saved) !== permBefore)) {
@@ -4831,6 +4900,8 @@ async function bootMain() {
     catch (e) { console.warn('migrate', e); }
   }
   await wrap(() => ensureAutoRounds());
+  autoPublish(null, { quiet: true });
+  setInterval(() => { if (document.visibilityState === 'visible') autoPublish(null, { quiet: true }); }, 10 * 60 * 1000);   // 회차가 바뀌거나 행사 마감이 지나 링크 내용이 달라질 때
   processInbox(true).then(n => { if (n) { loadPii(curRound()?.id, true).then(renderAll); } }).catch(e => console.warn('inbox', e));
   // 보관기간이 지난 회차 자동 파기
   const exp = expiredRounds();
