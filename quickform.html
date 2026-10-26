@@ -450,7 +450,7 @@ const APP_NAME = 'QuickForm';
 /** SharePoint 문서 라이브러리 안의 저장 폴더 기본값. 기관마다 배포 링크에 &folder=경로 로 바꿀 수 있음 */
 const DATA_FOLDER = 'QuickFormData';
 const LEGACY_FOLDERS = ['EWelfareData/QuickForm'];   // 예전 기본값 — 이미 쓰던 기관은 자동으로 이어서 씀
-const APP_VERSION = 'QF-5.7.5 · 10-26 16:50';
+const APP_VERSION = 'QF-5.8.0 · 10-26 17:30';
 const GRAPH = 'https://graph.microsoft.com/v1.0';
 /** 권한 범위: 기본 Sites.ReadWrite.All, 배포 링크에 &perm=selected 면 Sites.Selected(지정한 사이트만) */
 const scopeStr = () => `openid profile email offline_access https://graph.microsoft.com/${Infra.cfg.permSelected ? 'Sites.Selected' : 'Sites.ReadWrite.All'}`;
@@ -1096,7 +1096,8 @@ const useFund = s => !!s?.useFund && fundOpts(s).length > 0;
 const FIELD_TYPES = { text: '짧은 글', long: '긴 글', choice: '보기 중 하나', multi: '보기 여러 개', yesno: '예 / 아니오', check: '체크 (해당할 때만)', number: '숫자', date: '날짜' };
 const pubFields = (s, staff = false) => (s?.fields || []).filter(f => f.label && (staff || !f.staff));
 const packFacs = (s, staff = false) => svcFacs(s).length && (staff || s.facilityPick !== 'staff') ? { fs: staff && myFacs(s) !== 'all' ? myFacs(s) : svcFacs(s) } : {};
-const packFields = (s, staff = false) => { const f = pubFields(s, staff); return f.length ? { x: f.map(q => [q.id, q.label, q.type, q.opts || [], q.req ? 1 : 0, q.staff ? 1 : 0]) } : {}; };
+const qtyPosOf = s => s?.qtyPos || (s?.qtyFirst ? 'top' : '');
+const packFields = (s, staff = false) => { const f = pubFields(s, staff); return f.length ? { x: f.map(q => [q.id, q.label, q.type, q.opts || [], q.req ? 1 : 0, q.staff ? 1 : 0, ...(q.cond ? [q.cond] : [])]) } : {}; };
 const extText = (s, p) => (s.fields || []).map(f => { const v = p?.ext?.[f.id]; const t = Array.isArray(v) ? v.join(', ') : (v ?? ''); return t !== '' ? `${f.label}: ${t}` : ''; }).filter(Boolean).join(' · ');
 const chipToggles = (name, opts, sel = []) => `<div class="flex flex-wrap gap-1.5" data-chips="${esc(name)}">${opts.map(o => `<label class="cursor-pointer"><input type="checkbox" value="${esc(o)}" class="peer sr-only" ${sel.includes(o) ? 'checked' : ''}><span class="inline-block px-2.5 py-1 rounded-full border border-slate-300 text-[11px] text-slate-600 peer-checked:bg-ewelfare-900 peer-checked:text-white peer-checked:border-ewelfare-900">${esc(o)}</span></label>`).join('') || '<span class="text-[11px] text-amber-700">목록 없음 — [설정 → 목록 관리]</span>'}</div>`;
 const readChips = (root, name) => [...root.querySelectorAll(`[data-chips="${name}"] input:checked`)].map(i => i.value);
@@ -2463,11 +2464,11 @@ function applyCfg_(s, r, staff = false) {
   return {
     v: 1, sid: s.id, rid: r.id, i: DB.config.institutionName || '', c: DB.config.privacyContact || '', d: DB.config.piiRetentionDays || 14, ...(DB.config.consentText ? { ct: DB.config.consentText } : {}),
     b: (({ from, ...b }) => b)(svcBank(s)), h: DB.config.webhookUrl || '',
-    s: { n: s.name, ds: s.desc || '', pg: s.programs || [], ut: s.userTypes || [], ug: !!s.useGuardian, gr: !!s.isGrid, dy: s.days || [], it: formItems(s).map(i => i.link ? [i.id, i.name, pubPrice(s, i.price), i.link] : [i.id, i.name, pubPrice(s, i.price)]), mx: Number(s.maxTotal) || 0, qm: qtyMode(s), ...(s.maxPerDay ? { md: Number(s.maxPerDay) } : {}), ...(payMode(s) === 'none' ? { pm: 'n' } : {}), ...(phoneMode(s) !== 'req' ? { ph: phoneMode(s) } : {}), ...(addrMode(s) !== 'off' ? { ad: addrMode(s) } : {}), ...packFields(s, staff), ...packFacs(s, staff), ...(qtyMode(s) === 'date' ? { dt: roundDates(s, r) } : {}), ...(s.closedMsg ? { cm: s.closedMsg } : {}), ...pubPick(s), ...pubLimits(s), ...pubRules(s), ...(hideDl(s) ? { hd: 1 } : {}), ...(s.unit ? { un: s.unit } : {}), ...(s.qtyLabel ? { ql: s.qtyLabel } : {}), ...(s.formal ? { fm: 1 } : {}) },
+    s: { n: s.name, ds: s.desc || '', pg: s.programs || [], ut: s.userTypes || [], ug: !!s.useGuardian, gr: !!s.isGrid, dy: s.days || [], it: formItems(s).map(i => i.link ? [i.id, i.name, pubPrice(s, i.price), i.link] : [i.id, i.name, pubPrice(s, i.price)]), mx: Number(s.maxTotal) || 0, qm: qtyMode(s), ...(s.maxPerDay ? { md: Number(s.maxPerDay) } : {}), ...(payMode(s) === 'none' ? { pm: 'n' } : {}), ...(phoneMode(s) !== 'req' ? { ph: phoneMode(s) } : {}), ...(addrMode(s) !== 'off' ? { ad: addrMode(s) } : {}), ...packFields(s, staff), ...packFacs(s, staff), ...(qtyMode(s) === 'date' ? { dt: roundDates(s, r) } : {}), ...(s.closedMsg ? { cm: s.closedMsg } : {}), ...pubPick(s), ...pubLimits(s), ...pubRules(s), ...(hideDl(s) ? { hd: 1 } : {}), ...(s.unit ? { un: s.unit } : {}), ...(s.qtyLabel ? { ql: s.qtyLabel } : {}), ...(s.formal ? { fm: 1 } : {}), ...(qtyPosOf(s) ? { qf: qtyPosOf(s) } : {}) },
     r: { n: r.name, dl: r.deadline || '', vs: r.validStart || '', ve: r.validEnd || '', ps: r.pickupStart || '', pe: r.pickupEnd || '' }
   };
 }
-const cfgSvc = c => ({ ...(c.s.pk ? { pickupDays: c.s.pk[0] || [], pickupHours: c.s.pk[1] || '', pickupPlace: c.s.pk[2] || '' } : {}), programLimits: c.s.pl || {}, programItems: c.s.pi || {}, personMax: c.s.px || 0, typeRules: Object.fromEntries(Object.entries(c.s.tr || {}).map(([k, v]) => [k, { items: v.i || [], perDay: v.d || 0 }])), notice: c.s.nt || '', hideDlTime: !!c.s.hd, unit: c.s.un || '', qtyLabel: c.s.ql || '', id: c.sid, name: c.s.n, desc: c.s.ds, programs: c.s.pg, userTypes: c.s.ut, useGuardian: c.s.ug, isGrid: c.s.gr, qtyMode: c.s.qm || (c.s.gr ? 'weekday' : 'total'), dates: c.s.dt || [], closedMsg: c.s.cm || '', days: c.s.dy, maxPerDay: c.s.md || 0, items: c.s.it.map(([id, name, price, link]) => ({ id, name, price, link: /^https?:\/\//i.test(link || '') ? link : '', ...((c.s.hi || []).includes(id) ? { hidden: true } : {}) })), maxTotal: c.s.mx, payMode: c.s.pm === 'n' ? 'none' : 'deposit', phoneMode: c.s.ph || 'req', addrMode: c.s.ad || 'off', fields: (c.s.x || []).map(([id, label, type, opts, req, st]) => ({ id, label, type, opts: opts || [], req: !!req, staff: !!st })), facilities: c.s.fs || [] });
+const cfgSvc = c => ({ ...(c.s.pk ? { pickupDays: c.s.pk[0] || [], pickupHours: c.s.pk[1] || '', pickupPlace: c.s.pk[2] || '' } : {}), programLimits: c.s.pl || {}, programItems: c.s.pi || {}, personMax: c.s.px || 0, typeRules: Object.fromEntries(Object.entries(c.s.tr || {}).map(([k, v]) => [k, { items: v.i || [], perDay: v.d || 0 }])), notice: c.s.nt || '', hideDlTime: !!c.s.hd, unit: c.s.un || '', qtyLabel: c.s.ql || '', id: c.sid, name: c.s.n, desc: c.s.ds, programs: c.s.pg, userTypes: c.s.ut, useGuardian: c.s.ug, isGrid: c.s.gr, qtyMode: c.s.qm || (c.s.gr ? 'weekday' : 'total'), dates: c.s.dt || [], closedMsg: c.s.cm || '', days: c.s.dy, maxPerDay: c.s.md || 0, items: c.s.it.map(([id, name, price, link]) => ({ id, name, price, link: /^https?:\/\//i.test(link || '') ? link : '', ...((c.s.hi || []).includes(id) ? { hidden: true } : {}) })), maxTotal: c.s.mx, payMode: c.s.pm === 'n' ? 'none' : 'deposit', phoneMode: c.s.ph || 'req', addrMode: c.s.ad || 'off', fields: (c.s.x || []).map(([id, label, type, opts, req, st, cond]) => ({ id, label, type, opts: opts || [], req: !!req, staff: !!st, ...(cond ? { cond } : {}) })), qtyPos: c.s.qf === 1 ? 'top' : (c.s.qf || ''), facilities: c.s.fs || [] });
 const cfgRound = c => ({ id: c.rid, name: c.r.n, deadline: c.r.dl, validStart: c.r.vs, validEnd: c.r.ve, pickupStart: c.r.ps || '', pickupEnd: c.r.pe || '' });
 const cfgConf = c => ({ institutionName: c.i, privacyContact: c.c, piiRetentionDays: c.d, consentText: c.ct || '' });
 const encCfg = c => b64url(new TextEncoder().encode(JSON.stringify(c)));
@@ -2486,7 +2487,7 @@ function applyCfg2(s) {
     v: 2, sid: s.id, i: DB.config.institutionName || '', c: DB.config.privacyContact || '', d: DB.config.piiRetentionDays || 14, ...(DB.config.consentText ? { ct: DB.config.consentText } : {}),
     b: (({ from, ...b }) => b)(svcBank(s)), h: DB.config.webhookUrl || '',
     ...((DB.config.holidays || []).length ? { hol: DB.config.holidays } : {}), ...((DB.config.notHolidays || []).length ? { nh: DB.config.notHolidays } : {}),
-    s: { n: s.name, ds: s.desc || '', pg: s.programs || [], ut: s.userTypes || [], ug: !!s.useGuardian, gr: !!s.isGrid, dy: s.days || [], it: formItems(s).map(i => i.link ? [i.id, i.name, pubPrice(s, i.price), i.link] : [i.id, i.name, pubPrice(s, i.price)]), mx: Number(s.maxTotal) || 0, qm: qtyMode(s), ...(s.maxPerDay ? { md: Number(s.maxPerDay) } : {}), ...(payMode(s) === 'none' ? { pm: 'n' } : {}), ...(phoneMode(s) !== 'req' ? { ph: phoneMode(s) } : {}), ...(addrMode(s) !== 'off' ? { ad: addrMode(s) } : {}), ...packFields(s), ...packFacs(s), mo: mode, ...(s.closedMsg ? { cm: s.closedMsg } : {}), ...pubPick(s), ...pubLimits(s), ...pubRules(s), ...(hideDl(s) ? { hd: 1 } : {}), ...(s.unit ? { un: s.unit } : {}), ...(s.qtyLabel ? { ql: s.qtyLabel } : {}), ...(s.formal ? { fm: 1 } : {}) }
+    s: { n: s.name, ds: s.desc || '', pg: s.programs || [], ut: s.userTypes || [], ug: !!s.useGuardian, gr: !!s.isGrid, dy: s.days || [], it: formItems(s).map(i => i.link ? [i.id, i.name, pubPrice(s, i.price), i.link] : [i.id, i.name, pubPrice(s, i.price)]), mx: Number(s.maxTotal) || 0, qm: qtyMode(s), ...(s.maxPerDay ? { md: Number(s.maxPerDay) } : {}), ...(payMode(s) === 'none' ? { pm: 'n' } : {}), ...(phoneMode(s) !== 'req' ? { ph: phoneMode(s) } : {}), ...(addrMode(s) !== 'off' ? { ad: addrMode(s) } : {}), ...packFields(s), ...packFacs(s), mo: mode, ...(s.closedMsg ? { cm: s.closedMsg } : {}), ...pubPick(s), ...pubLimits(s), ...pubRules(s), ...(hideDl(s) ? { hd: 1 } : {}), ...(s.unit ? { un: s.unit } : {}), ...(s.qtyLabel ? { ql: s.qtyLabel } : {}), ...(s.formal ? { fm: 1 } : {}), ...(qtyPosOf(s) ? { qf: qtyPosOf(s) } : {}) }
   };
   c.sf = shortName(s);
   if (mode === 'auto') {
@@ -2609,7 +2610,7 @@ const ApplyForm = {
           <input data-f="addr" autocomplete="street-address" class="${inCls}" placeholder="기본 주소">
           <input data-f="addr2" class="${inCls}" placeholder="상세 주소 (동·호수)">
         </div></section>` : ''}
-      ${FL.map(f => `<section data-xq="${esc(f.id)}">${lbl(no(), esc(f.label) + (f.staff ? ' <span class="text-[11px] font-normal text-slate-500">(직원 입력)</span>' : ''), f.req).replace(/<\/p>$/, f.type === 'multi' ? ' <span class="ml-1 text-xs font-medium text-ewelfare-700 whitespace-nowrap">복수 선택 가능</span></p>' : '</p>')}${
+      ${FL.map(f => `<section data-xq="${esc(f.id)}" ${f.cond === 'qty2' ? 'data-cond="qty2" class="hidden"' : ''}>${lbl(no(), esc(f.label) + (f.staff ? ' <span class="text-[11px] font-normal text-slate-500">(직원 입력)</span>' : ''), f.req).replace(/<\/p>$/, f.type === 'multi' ? ' <span class="ml-1 text-xs font-medium text-ewelfare-700 whitespace-nowrap">복수 선택 가능</span></p>' : '</p>')}${
         f.type === 'choice' ? chipGroup(`x-${f.id}`, f.opts, '')
         : f.type === 'yesno' ? chipGroup(`x-${f.id}`, ['예', '아니오'], '')
         : f.type === 'check' ? `<label class="inline-flex items-center gap-3 border-2 border-slate-200 rounded-xl px-4 py-3 cursor-pointer has-[:checked]:border-ewelfare-700 has-[:checked]:bg-ewelfare-50"><input type="checkbox" data-xc="${esc(f.id)}" class="w-5 h-5 accent-emerald-800"><span class="text-[15px]">${esc((f.opts || [])[0] || '예')}</span></label>`
@@ -2618,7 +2619,7 @@ const ApplyForm = {
         : f.type === 'number' ? `<input data-x="${esc(f.id)}" type="number" inputmode="numeric" class="${inCls}">`
         : f.type === 'date' ? `<input data-x="${esc(f.id)}" type="date" class="${inCls}">`
         : `<input data-x="${esc(f.id)}" maxlength="100" class="${inCls}">`}</section>`).join('')}
-      <section>${lbl(no(), s.qtyLabel || '신청 내역')}
+      <section data-qtysec>${lbl(no(), s.qtyLabel || '신청 내역')}
         ${PX && !pick ? `<p class="text-sm text-slate-600 mb-2">한 분이 이번 회차에 <b>최대 ${PX}${U}</b>까지 신청할 수 있어요. 나눠서 신청하셔도 합쳐서 계산해요.</p>` : ''}
         ${pick ? '<p class="text-sm text-slate-600 mb-2">하나를 골라 주세요.</p>' : max && qm === 'total' ? `<p class="text-sm text-slate-600 mb-2">한 번에 <b>최대 ${max}${U}</b>까지 신청할 수 있어요.</p>` : ''}
         ${!pick && qm !== 'total' && s.items.some(i => i.link) ? `<p class="text-sm mb-2">${s.items.filter(i => i.link).map(i => `<a href="${esc(i.link)}" target="_blank" rel="noopener" class="text-ewelfare-700 underline mr-3">${esc(i.name)} 보기</a>`).join('')}</p>` : ''}
@@ -2705,12 +2706,21 @@ const ApplyForm = {
       el.querySelectorAll('select[data-q]').forEach(x => x.classList.toggle('text-slate-300', x.value === '0'));
       const q2 = readQty();
       $e('[data-cnt]').textContent = q2.cnt;
+      condUpdate(q2.cnt);
       if ($e('[data-amt]')) $e('[data-amt]').textContent = won(q2.amount);
       const dn = $e('[data-depname]'); if (dn) { const v = depName(); dn.textContent = v || '성명·연락처를 넣으면 표시돼요'; dn.toggleAttribute('data-empty', !v); }
     };
     const ph = $e('[data-f="phone"]'); if (ph) ph.addEventListener('input', () => { ph.value = fmtPhone(ph.value); });
     el.addEventListener('input', sync); el.addEventListener('change', sync);
     el.querySelectorAll('input[data-q]').forEach(i => i.addEventListener('focus', () => i.select()));
+    // 조건부 질문(수량 2 이상일 때만) · 번호 다시 매기기 · 수량 칸 먼저
+    const NUMS = '①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳';
+    const renumber = () => { let i = 0; el.querySelectorAll(':scope > div > section').forEach(sec => { const n = sec.querySelector(':scope > p > span.text-ewelfare-700'); if (!n || sec.classList.contains('hidden')) return; n.textContent = NUMS[i++] || '•'; }); };
+    const condUpdate = cnt => { let ch = false; el.querySelectorAll('[data-cond="qty2"]').forEach(sec => { const on = cnt >= 2; if (sec.classList.contains('hidden') === on) { sec.classList.toggle('hidden', !on); ch = true; } }); if (ch) renumber(); };
+    { const qs = el.querySelector('[data-qtysec]'), pos = s.qtyPos || '';   // 수량 칸 위치 + '2 이상일 때만' 질문은 수량 칸 바로 아래
+      if (qs) { const after = pos && pos !== 'top' ? el.querySelector(`[data-xq="${CSS.escape(pos)}"]`) : null, first = el.querySelector('[data-xq]:not([data-cond])');
+        if (after) after.after(qs); else if (pos === 'top' && first) first.before(qs);
+        let at = qs; el.querySelectorAll('[data-cond="qty2"]').forEach(sec => { at.after(sec); at = sec; }); renumber(); } }
     // 날짜별: 신청자가 날짜를 하나씩 추가 → 그 날짜의 권종 수량
     const dayList = $e('[data-daylist]'), addSel = $e('[data-adddate]');
     const addDay = d => {
@@ -2753,6 +2763,7 @@ const ApplyForm = {
         if (AD === 'req' && !v('addr')) fail('주소를 입력해 주세요. [주소 검색]을 누르면 쉽게 찾을 수 있어요.');
         const ext = {};
         FL.forEach(f => {
+          if (f.cond && el.querySelector(`[data-xq="${CSS.escape(f.id)}"]`)?.classList.contains('hidden')) return;   // 조건이 안 맞아 숨긴 질문
           let v;
           if (f.type === 'multi') v = [...el.querySelectorAll(`input[name="x-${CSS.escape(f.id)}"]:checked`)].map(i => i.value);
           else if (f.type === 'check') v = el.querySelector(`[data-xc="${CSS.escape(f.id)}"]`)?.checked ? '예' : '';
@@ -2793,7 +2804,9 @@ function validateApply(s, o) {
   if (phoneMode(s) === 'req' && !/^01\d-\d{3,4}-\d{4}$/.test(ph)) return '연락처 형식 오류';
   if (addrMode(s) === 'req' && !String(o.addr || '').trim()) return '주소 없음';
   if (svcFacs(s).length) { if (o.facility && !svcFacs(s).includes(o.facility)) return '없는 시설'; if (!o.facility && s.facilityPick !== 'staff' && !o.staffEntry) return '시설 미선택'; }
+  const qtot = Object.values(o.itemQty || {}).reduce((a, n) => a + parseQty(n), 0);
   for (const f of pubFields(s, !!o.staffEntry)) {
+    if (f.cond === 'qty2' && qtot < 2) continue;
     const v = o.ext?.[f.id], empty = v === undefined || v === '' || (Array.isArray(v) && !v.length);
     if (f.req && empty) return `필수 질문 미응답(${f.label})`;
     if (!empty && (f.type === 'choice' && !f.opts.includes(v) || f.type === 'yesno' && !['예', '아니오'].includes(v) || f.type === 'check' && v !== '예' || f.type === 'multi' && (!Array.isArray(v) || v.some(x => !f.opts.includes(x))))) return `보기에 없는 답(${f.label})`;
@@ -4394,7 +4407,7 @@ async function openServiceEditor(id) {
     <td class="pr-1 py-0.5"><input data-fl="label" value="${esc(f.label || '')}" class="qf-in" placeholder="질문 제목 (예: 희망 수령 방법)"></td>
     <td class="px-1"><select data-fl="type" class="qf-in !w-28">${Object.entries(FIELD_TYPES).map(([k, v]) => `<option value="${k}" ${k === (f.type || 'text') ? 'selected' : ''}>${v}</option>`).join('')}</select></td>
     <td class="px-1"><input data-fl="opts" value="${esc((f.opts || []).join(', '))}" class="qf-in ${['choice', 'multi', 'check'].includes(f.type) ? '' : 'hidden'}" placeholder="보기를 쉼표로 (예: 직접 수령, 택배)"></td>
-    <td class="px-1 whitespace-nowrap"><label class="mr-2"><input type="checkbox" data-fl="req" ${f.req ? 'checked' : ''}> 필수</label><label title="신청자 화면에는 안 나오고 직원 입력·명부에만"><input type="checkbox" data-fl="staff" ${f.staff ? 'checked' : ''}> 직원만</label></td>
+    <td class="px-1 whitespace-nowrap"><label class="mr-2"><input type="checkbox" data-fl="req" ${f.req ? 'checked' : ''}> 필수</label><label title="신청자 화면에는 안 나오고 직원 입력·명부에만"><input type="checkbox" data-fl="staff" ${f.staff ? 'checked' : ''}> 직원만</label><label class="ml-2" title="수량(예: 참석 인원)을 2 이상 골랐을 때만 이 질문이 나옵니다. 예: 동반자 성함"><input type="checkbox" data-fl="cond" ${f.cond === 'qty2' ? 'checked' : ''}> 2명(개) 이상일 때만</label></td>
     <td class="whitespace-nowrap"><button data-fup class="px-1 text-slate-500" title="위로"><i class="fa-solid fa-arrow-up"></i></button><button data-fdel class="text-rose-500 px-1" title="삭제"><i class="fa-solid fa-xmark"></i></button></td></tr>`;
   const itemRow = it => `<tr data-item="${esc(it.id)}"><td class="pr-1 py-0.5"><input data-in="name" value="${esc(it.name)}" class="qf-in"></td><td class="px-1 text-center whitespace-nowrap"><label title="신청서에 이 품목을 보이지 않게 합니다(기존 신청 기록은 그대로)"><input type="checkbox" data-in="hidden" ${it.hidden ? 'checked' : ''}> 숨김</label></td><td class="px-1"><input data-in="price" type="number" min="0" value="${Number(it.price) || 0}" class="qf-in !w-28 text-right"></td><td class="px-1"><input data-in="link" value="${esc(it.link || '')}" class="qf-in" placeholder="https://… (선택)"></td><td><button data-del class="text-rose-500 px-2" title="삭제"><i class="fa-solid fa-xmark"></i></button></td></tr>`;
   const SEC = (t, help, body, extra = '') => `<section class="border rounded-lg p-3 space-y-2"><div class="flex items-center justify-between"><p class="font-bold text-slate-800">${t}${help ? H(help) : ''}</p>${extra}</div>${body}</section>`;
@@ -4462,6 +4475,7 @@ async function openServiceEditor(id) {
           <option value="total" ${qtyMode(s0) === 'total' ? 'selected' : ''}>합계만</option></select></label>
         <label>수량 칸 제목${H('신청서의 "신청 내역" 대신 쓸 말. 예: 참석 인원. 비우면 "신청 내역".')}<input data-s="qtyLabel" value="${esc(s0.qtyLabel || '')}" class="qf-in mt-1" placeholder="신청 내역"></label>
         <label>단위${H('예: 명, 장, 개. 비우면 날짜·요일별은 "장", 합계만은 "개".')}<input data-s="unit" value="${esc(s0.unit || '')}" class="qf-in mt-1 !w-24" placeholder="기본"></label>
+        <label>수량 칸 위치${H('신청서에서 수량(예: 참석 인원) 칸이 나올 자리. "2명(개) 이상일 때만" 질문은 언제나 수량 칸 바로 아래에 나옵니다.')}<select data-s="qtyPos" class="qf-in mt-1"><option value="">맨 아래 (기본)</option><option value="top" ${qtyPosOf(s0) === 'top' ? 'selected' : ''}>추가 질문보다 먼저</option>${(s0.fields || []).filter(f => f.label && !f.staff && f.cond !== 'qty2').map(f => `<option value="${esc(f.id)}" ${qtyPosOf(s0) === f.id ? 'selected' : ''}>"${esc(f.label.slice(0, 20))}" 다음</option>`).join('')}</select></label>
       </div>
       <div class="grid md:grid-cols-5 gap-2 items-end">
         <label>최대 수량${H('1회 신청 합계 한도. 0이면 제한 없음.')}<input data-s="maxTotal" type="number" min="0" value="${Number(s0.maxTotal) || 0}" class="qf-in mt-1"></label>
@@ -4511,7 +4525,7 @@ async function openServiceEditor(id) {
       if (!isSplit && s0.split && DB.applications.some(a => a.serviceId === s0.id && a.facility)) throw new Error('시설이 지정된 신청이 있어 시설별 관리를 끌 수 없습니다.');
       const facilityStaff = {}; (isSplit ? (DB.config.facilities || []) : []).forEach(f => { facilityStaff[f] = { managers: lcList(b.querySelector(`[data-fs="${CSS.escape(f)}|managers"]`)?.value), kiosk: lcList(b.querySelector(`[data-fs="${CSS.escape(f)}|kiosk"]`)?.value) }; });
       if (admin && badK.length) throw new Error(`태블릿 계정 이메일 형식이 아닙니다: ${badK.join(', ')}`);
-      const fields = [...b.querySelectorAll('[data-field]')].map(tr => { const q = k => tr.querySelector(`[data-fl="${k}"]`); const type = q('type').value; return { id: tr.dataset.field, label: q('label').value.trim().replace(/\s+/g, ' '), type, opts: ['choice', 'multi'].includes(type) ? [...new Set(q('opts').value.split(',').map(x => x.trim()).filter(Boolean))] : type === 'check' ? [q('opts').value.trim()].filter(Boolean).slice(0, 1) : [], req: q('req').checked, staff: q('staff').checked }; }).filter(f => f.label);
+      const fields = [...b.querySelectorAll('[data-field]')].map(tr => { const q = k => tr.querySelector(`[data-fl="${k}"]`); const type = q('type').value; return { id: tr.dataset.field, label: q('label').value.trim().replace(/\s+/g, ' '), type, opts: ['choice', 'multi'].includes(type) ? [...new Set(q('opts').value.split(',').map(x => x.trim()).filter(Boolean))] : type === 'check' ? [q('opts').value.trim()].filter(Boolean).slice(0, 1) : [], req: q('req').checked, staff: q('staff').checked, ...(q('cond')?.checked ? { cond: 'qty2' } : {}) }; }).filter(f => f.label);
       const badF = fields.find(f => ['choice', 'multi'].includes(f.type) && f.opts.length < 2); if (badF) throw new Error(`"${badF.label}" 질문에 보기를 2개 이상 쉼표로 적어 주세요.`);
       const patch = {
         fields,
@@ -4525,7 +4539,7 @@ async function openServiceEditor(id) {
         programItems: (() => { const o = {}, ids = items.filter(i => !i.hidden).map(i => i.id); b.querySelectorAll('[data-pirow]').forEach(row => { const on = [...row.querySelectorAll('[data-pi]:checked')].map(x => x.dataset.pi).filter(x => ids.includes(x)); if (on.length && on.length < ids.length) o[row.dataset.pirow] = on; }); return o; })(),
         notice: g('notice').value.replace(/\r/g, '').trim(), pickupDays: readChips(b, 'pickupDays'), pickupHours: g('pickupHours').value.trim(), pickupPlace: g('pickupPlace').value.trim(),
         userTypes: readChips(b, 'userTypes'), useGuardian: g('useGuardian').checked,
-        payMode: g('payMode').value, phoneMode: g('phoneMode').value, addrMode: g('addrMode').value, useFund: g('useFund').checked, funds: readChips(b, 'funds'), qtyMode: g('qtyMode').value, isGrid: g('qtyMode').value !== 'total', closedMsg: g('closedMsg').value.trim(), hideDlTime: g('hideDlTime').checked, formal: g('formal').checked, qtyLabel: g('qtyLabel').value.trim().slice(0, 30), unit: g('unit').value.trim().slice(0, 5),
+        payMode: g('payMode').value, phoneMode: g('phoneMode').value, addrMode: g('addrMode').value, useFund: g('useFund').checked, funds: readChips(b, 'funds'), qtyMode: g('qtyMode').value, isGrid: g('qtyMode').value !== 'total', closedMsg: g('closedMsg').value.trim(), hideDlTime: g('hideDlTime').checked, formal: g('formal').checked, qtyLabel: g('qtyLabel').value.trim().slice(0, 30), unit: g('unit').value.trim().slice(0, 5), qtyPos: g('qtyPos').value, qtyFirst: undefined,
         ...(admin ? { managers, kioskUsers, facilityStaff } : {}),
         days: g('qtyMode').value !== 'total' ? readChips(b, 'days') : [], items, reportTitle: g('reportTitle').value.trim(), reportFooter: g('reportFooter').value.trim()
       };
