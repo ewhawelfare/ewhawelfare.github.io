@@ -450,7 +450,7 @@ const APP_NAME = 'QuickForm';
 /** SharePoint 문서 라이브러리 안의 저장 폴더 기본값. 기관마다 배포 링크에 &folder=경로 로 바꿀 수 있음 */
 const DATA_FOLDER = 'QuickFormData';
 const LEGACY_FOLDERS = ['EWelfareData/QuickForm'];   // 예전 기본값 — 이미 쓰던 기관은 자동으로 이어서 씀
-const APP_VERSION = 'QF-5.7.1 · 10-26 15:00';
+const APP_VERSION = 'QF-5.7.4 · 10-26 16:20';
 const GRAPH = 'https://graph.microsoft.com/v1.0';
 /** 권한 범위: 기본 Sites.ReadWrite.All, 배포 링크에 &perm=selected 면 Sites.Selected(지정한 사이트만) */
 const scopeStr = () => `openid profile email offline_access https://graph.microsoft.com/${Infra.cfg.permSelected ? 'Sites.Selected' : 'Sites.ReadWrite.All'}`;
@@ -484,7 +484,7 @@ const isGuid = s => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{1
 const inIframe = (() => { try { return window.self !== window.top; } catch { return true; } })();
 /** Teams 앱(개인 탭)으로 열렸는지: 앱 패키지의 주소에 host=teams 를 붙여 둠 */
 const IN_TEAMS = inIframe && new URLSearchParams(location.search).get('host') === 'teams';
-/** 같은 CMS 주소의 다른 앱(예: 통합업무시스템) 화면 안에 끼워 보여 줄 때: ?embed=1 */
+/** 같은 사이트(주소)의 다른 앱(예: 통합업무시스템) 화면 안에 끼워 보여 줄 때: ?embed=1 */
 const SAME_PARENT = inIframe && (() => { try { return window.parent.location.origin === location.origin; } catch { return false; } })();
 const EMBED = SAME_PARENT && !IN_TEAMS && new URLSearchParams(location.search).get('embed') === '1';
 /** 다른 사이트가 이 앱을 몰래 끼워 넣은 경우(클릭재킹 방지): 관리 화면을 열지 않음 */
@@ -1093,7 +1093,7 @@ const addrMode = s => s?.addrMode || 'off';     // off / opt / req
 const fundOpts = s => (s?.funds?.length ? s.funds : (DB?.config?.funds || []));
 const useFund = s => !!s?.useFund && fundOpts(s).length > 0;
 /** 관리자가 추가하는 질문: type text/long/choice/multi/yesno/number/date · staff=직원만 입력(신청자 화면에 안 나옴) */
-const FIELD_TYPES = { text: '짧은 글', long: '긴 글', choice: '보기 중 하나', multi: '보기 여러 개', yesno: '예 / 아니오', number: '숫자', date: '날짜' };
+const FIELD_TYPES = { text: '짧은 글', long: '긴 글', choice: '보기 중 하나', multi: '보기 여러 개', yesno: '예 / 아니오', check: '체크 (해당할 때만)', number: '숫자', date: '날짜' };
 const pubFields = (s, staff = false) => (s?.fields || []).filter(f => f.label && (staff || !f.staff));
 const packFacs = (s, staff = false) => svcFacs(s).length && (staff || s.facilityPick !== 'staff') ? { fs: staff && myFacs(s) !== 'all' ? myFacs(s) : svcFacs(s) } : {};
 const packFields = (s, staff = false) => { const f = pubFields(s, staff); return f.length ? { x: f.map(q => [q.id, q.label, q.type, q.opts || [], q.req ? 1 : 0, q.staff ? 1 : 0]) } : {}; };
@@ -1240,9 +1240,12 @@ function configFileHtml() {
   const j = JSON.stringify({ tid: c.tenantId, cid: c.clientId, sp: c.siteUrl, ...(c.folder && c.folder !== DATA_FOLDER ? { folder: c.folder } : {}), ...(c.permSelected ? { perm: 'selected' } : {}) });
   return `<!doctype html>\n<!-- ${APP_NAME} 연결 설정 (비밀 정보 아님: 로그인 없이는 아무것도 볼 수 없음) · ${ymdhm()} -->\n<html lang="ko"><head><meta charset="utf-8"><meta name="robots" content="noindex"><title>${APP_NAME}</title>\n<script type="application/json" id="qf-config">${j.replace(/</g, '\\u003c')}<\/script>\n<meta http-equiv="refresh" content="0;url=${e(link)}"></head><body style="font-family:sans-serif;padding:40px;text-align:center"><a href="${e(link)}">${APP_NAME} 열기</a></body></html>\n`;
 }
-function makeConfigFile() {
+/** 앱 파일을 올려 둔 곳 이름 (안내 문구용) */
+const hostLabel = () => ghCfg().repo ? `GitHub 저장소(${ghCfg().repo})` : '앱 파일을 올려 둔 곳';
+async function makeConfigFile() {
+  if (ghOn()) { const ok = await wrap(() => ghPut(cfgFileName(), configFileHtml(), 'QuickForm: 직원용 설정 파일 갱신')); if (ok) UI.toast(`${cfgFileName()} 를 ${hostLabel()}에 올렸습니다. 1~2분 뒤 [올린 파일 확인]을 누르세요.`, 'ok'); return; }
   const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([configFileHtml()], { type: 'text/html' })); a.download = cfgFileName(); a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-  UI.toast(`${cfgFileName()} 를 내려받았습니다. CMS에서 앱 파일과 같은 폴더에 올린 뒤 [올린 파일 확인]을 누르세요.`, 'info');
+  UI.toast(`${cfgFileName()} 를 내려받았습니다. ${hostLabel()}에 앱 파일(quickform.html)과 같은 폴더로 올린 뒤 [올린 파일 확인]을 누르세요.`, 'info');
 }
 async function checkConfigFile() {
   const r = await fetch(cfgFileUrl() + '?nc=' + Date.now(), { cache: 'no-store' }).catch(() => null);
@@ -1425,7 +1428,7 @@ async function loadAndRender() {
 }
 
 /* ---------- render ---------- */
-/* ---------- 연결된 앱 (같은 CMS·같은 Microsoft 로그인: 예) 통합업무시스템) ---------- */
+/* ---------- 연결된 앱 (같은 사이트·같은 Microsoft 로그인: 예) 통합업무시스템) ---------- */
 const linkedApps = () => (DB?.config?.linkedApps || []).filter(x => x && x.name && /^https:\/\//i.test(x.url || ''));
 function renderLinkedApps() {
   const box = $('#nav-linked'); if (!box) return; if (EMBED) { box.innerHTML = ''; return; }
@@ -1505,7 +1508,7 @@ async function editLinkedApps() {
     title: '<i class="fa-solid fa-link mr-1"></i> 연결된 앱', okText: '저장',
     html: `<div class="space-y-2 text-xs"><p>왼쪽 메뉴 아래 <b>다른 업무</b>에 보일 앱입니다. 한 줄에 하나씩 <code>이름 | 주소</code>로 적으세요.</p>
       <textarea data-la rows="4" class="qf-in font-mono" placeholder="통합업무시스템 | https://기관주소/index.html">${esc((DB.config.linkedApps || []).map(x => `${x.name} | ${x.url}`).join('\n'))}</textarea>
-      <p class="text-slate-500">같은 CMS에 올리고 같은 Microsoft 앱 등록(클라이언트 ID)을 쓰는 앱이면, 오갈 때 다시 로그인하지 않습니다.</p></div>`,
+      <p class="text-slate-500">같은 사이트(주소)에 올리고 같은 Microsoft 앱 등록(클라이언트 ID)을 쓰는 앱이면, 오갈 때 다시 로그인하지 않습니다.</p></div>`,
     async collect(b) {
       const list = b.querySelector('[data-la]').value.split('\n').map(l => l.trim()).filter(Boolean).map(l => { const i = l.lastIndexOf('|'); return { name: l.slice(0, i).trim(), url: l.slice(i + 1).trim() }; });
       const bad = list.find(x => !x.name || !/^https:\/\/\S+$/i.test(x.url)); if (bad) throw new Error(`"${bad.name || '?'} | ${bad.url || ''}" — 이름 | https://주소 형식으로 적어 주세요.`);
@@ -2606,10 +2609,11 @@ const ApplyForm = {
           <input data-f="addr" autocomplete="street-address" class="${inCls}" placeholder="기본 주소">
           <input data-f="addr2" class="${inCls}" placeholder="상세 주소 (동·호수)">
         </div></section>` : ''}
-      ${FL.map(f => `<section data-xq="${esc(f.id)}">${lbl(no(), esc(f.label) + (f.staff ? ' <span class="text-[11px] font-normal text-slate-500">(직원 입력)</span>' : ''), f.req)}${
+      ${FL.map(f => `<section data-xq="${esc(f.id)}">${lbl(no(), esc(f.label) + (f.staff ? ' <span class="text-[11px] font-normal text-slate-500">(직원 입력)</span>' : ''), f.req).replace(/<\/p>$/, f.type === 'multi' ? ' <span class="ml-1 text-xs font-medium text-ewelfare-700 whitespace-nowrap">복수 선택 가능</span></p>' : '</p>')}${
         f.type === 'choice' ? chipGroup(`x-${f.id}`, f.opts, '')
         : f.type === 'yesno' ? chipGroup(`x-${f.id}`, ['예', '아니오'], '')
-        : f.type === 'multi' ? `<div class="flex flex-wrap gap-2">${f.opts.map(o => `<label class="cursor-pointer"><input type="checkbox" name="x-${esc(f.id)}" value="${esc(o)}" class="peer sr-only"><span class="inline-block px-3.5 py-2 rounded-full border border-slate-300 text-sm text-slate-700 peer-checked:bg-ewelfare-900 peer-checked:text-white peer-checked:border-ewelfare-900">${esc(o)}</span></label>`).join('')}</div><p class="text-xs text-slate-500 mt-1">여러 개 고를 수 있어요.</p>`
+        : f.type === 'check' ? `<label class="inline-flex items-center gap-3 border-2 border-slate-200 rounded-xl px-4 py-3 cursor-pointer has-[:checked]:border-ewelfare-700 has-[:checked]:bg-ewelfare-50"><input type="checkbox" data-xc="${esc(f.id)}" class="w-5 h-5 accent-emerald-800"><span class="text-[15px]">${esc((f.opts || [])[0] || '예')}</span></label>`
+        : f.type === 'multi' ? `<div class="flex flex-wrap gap-2">${f.opts.map(o => `<label class="cursor-pointer"><input type="checkbox" name="x-${esc(f.id)}" value="${esc(o)}" class="peer sr-only"><span class="inline-block px-3.5 py-2 rounded-full border border-slate-300 text-sm text-slate-700 peer-checked:bg-ewelfare-900 peer-checked:text-white peer-checked:border-ewelfare-900">${esc(o)}</span></label>`).join('')}</div>`
         : f.type === 'long' ? `<textarea data-x="${esc(f.id)}" rows="3" maxlength="500" class="${inCls}"></textarea>`
         : f.type === 'number' ? `<input data-x="${esc(f.id)}" type="number" inputmode="numeric" class="${inCls}">`
         : f.type === 'date' ? `<input data-x="${esc(f.id)}" type="date" class="${inCls}">`
@@ -2751,6 +2755,7 @@ const ApplyForm = {
         FL.forEach(f => {
           let v;
           if (f.type === 'multi') v = [...el.querySelectorAll(`input[name="x-${CSS.escape(f.id)}"]:checked`)].map(i => i.value);
+          else if (f.type === 'check') v = el.querySelector(`[data-xc="${CSS.escape(f.id)}"]`)?.checked ? '예' : '';
           else if (f.type === 'choice' || f.type === 'yesno') v = el.querySelector(`input[name="x-${CSS.escape(f.id)}"]:checked`)?.value || '';
           else v = ($e(`[data-x="${CSS.escape(f.id)}"]`)?.value || '').trim();
           const empty = Array.isArray(v) ? !v.length : v === '';
@@ -2791,7 +2796,7 @@ function validateApply(s, o) {
   for (const f of pubFields(s, !!o.staffEntry)) {
     const v = o.ext?.[f.id], empty = v === undefined || v === '' || (Array.isArray(v) && !v.length);
     if (f.req && empty) return `필수 질문 미응답(${f.label})`;
-    if (!empty && (f.type === 'choice' && !f.opts.includes(v) || f.type === 'yesno' && !['예', '아니오'].includes(v) || f.type === 'multi' && (!Array.isArray(v) || v.some(x => !f.opts.includes(x))))) return `보기에 없는 답(${f.label})`;
+    if (!empty && (f.type === 'choice' && !f.opts.includes(v) || f.type === 'yesno' && !['예', '아니오'].includes(v) || f.type === 'check' && v !== '예' || f.type === 'multi' && (!Array.isArray(v) || v.some(x => !f.opts.includes(x))))) return `보기에 없는 답(${f.label})`;
   }
   if ((s.programs || []).length && !s.programs.includes(o.program)) return '등록되지 않은 프로그램';
   { const R1 = findRoundByRid(s, o.rid); if (R1?.extra && (R1.programs || []).length && !R1.programs.includes(o.program) && !o.staffEntry) return `이 행사 대상이 아닌 프로그램(${o.program})`; }
@@ -3088,7 +3093,7 @@ async function openQr() {
   const warn = [];
   if (hook && !(s.programs || []).length) warn.push('프로그램 목록이 비어 있습니다 ([양식 편집]).');
   if (hook && payMode(s) === 'deposit' && s.items.some(i => i.price) && !svcBank(s).a) warn.push('입금 계좌가 비어 있습니다 ([설정] 또는 서비스 편집).');
-  if (s.shortUrl && !shortOk) warn.push(isOwnShort(s.shortUrl) ? '설정이 바뀌었습니다. 아래 [파일 만들기]로 짧은 주소 파일을 새로 만들어 CMS에 다시 올린 뒤 [올린 파일 확인]을 눌러 주세요. (주소는 그대로라 안내문·QR은 바꿀 필요 없음)' : '설정이 바뀌어 저장된 짧은 주소는 예전 내용을 가리킵니다. 아래 긴 주소로 짧은 주소를 다시 만들어 넣어 주세요.');
+  if (s.shortUrl && !shortOk) warn.push(isOwnShort(s.shortUrl) ? (ghOn() ? '설정이 바뀌었는데 신청 링크 파일을 자동으로 올리지 못했습니다. 아래 [지금 다시 올리기]를 눌러 주세요. 계속 안 되면 [설정 → GitHub 자동 게시]의 토큰을 확인하세요.' : `설정이 바뀌었습니다. 아래 [파일 만들기]로 짧은 주소 파일을 새로 만들어 ${hostLabel()}에 다시 올린 뒤 [올린 파일 확인]을 눌러 주세요. (주소는 그대로라 안내문·QR은 바꿀 필요 없음)`) : '설정이 바뀌어 저장된 짧은 주소는 예전 내용을 가리킵니다. 아래 긴 주소로 짧은 주소를 다시 만들어 넣어 주세요.');
   if (s.linkSig && s.linkSig !== sig && !s.shortUrl) warn.push('설정이 바뀌어 예전에 보낸 링크는 옛 내용입니다. 새 링크를 다시 보내 주세요.');
   const mode = svcMode(s);
   const qrText = shortOk ? s.shortUrl : long;
@@ -3109,8 +3114,11 @@ async function openQr() {
         ${hook ? `<div class="rounded-lg border border-ewelfare-200 bg-ewelfare-50/60 p-2 space-y-1.5">
           <p class="font-semibold text-ewelfare-900"><i class="fa-solid fa-link"></i> 기관 짧은 주소 (추천)${H('짧은 이동용 파일을 만들어 이 앱(quickform.html)과 같은 곳에 올리면, 그 파일 주소가 짧은 신청 주소가 됩니다. 외부 단축 서비스가 필요 없고 기관 주소라 안심하고 누를 수 있습니다.\n설정을 바꾸면 파일만 새로 만들어 같은 이름으로 다시 올리면 됩니다(주소·QR은 그대로).')}</p>
           <p class="text-slate-600 break-all">주소: <b data-ownurl>${esc(ownShortUrl(shortName(s)))}</b></p>
+          ${ghOn() ? `<p class="text-emerald-800"><i class="fa-solid fa-circle-check"></i> <b>자동 게시 켜짐</b> — 양식을 저장하면 이 주소의 파일이 자동으로 다시 올라갑니다. 1~2분 뒤부터 같은 QR로 새 내용이 보입니다.</p>
+          <div class="flex flex-wrap gap-1 items-center"><button type="button" data-pubnow class="qf-btn !py-1 bg-ewelfare-900 text-white"><i class="fa-solid fa-cloud-arrow-up"></i> 지금 다시 올리기</button><span class="text-slate-500">${shortOk ? '지금 설정과 같습니다.' : '아직 올라가지 않은 변경이 있습니다.'}</span></div>
+          <details class="text-slate-500"><summary class="cursor-pointer">직접 올리기 (자동 게시가 안 될 때)</summary>` : ''}
           <div class="flex flex-wrap gap-1 items-center"><input data-fname value="${esc(shortName(s))}" class="qf-in !w-40 !py-1 font-mono"><button type="button" data-mkfile class="qf-btn !py-1 bg-ewelfare-900 text-white"><i class="fa-solid fa-file-arrow-down"></i> ① 파일 만들기</button><button type="button" data-chkfile class="qf-btn !py-1 bg-white border border-ewelfare-300 text-ewelfare-800"><i class="fa-solid fa-check"></i> ③ 올린 파일 확인</button></div>
-          <p class="text-slate-500">① 파일을 내려받아 → ② CMS의 quickform.html과 <b>같은 폴더</b>에 올리고 → ③ 확인을 누르면 QR이 짧은 주소로 바뀝니다.</p>
+          <p class="text-slate-500">① 파일을 내려받아 → ② ${esc(hostLabel())}에 quickform.html과 <b>같은 폴더</b>로 올리고 → ③ 확인을 누르면 QR이 짧은 주소로 바뀝니다.</p>${ghOn() ? '</details>' : ''}
         </div>` : ''}
         <details ${s.shortUrl && !isOwnShort(s.shortUrl) ? 'open' : ''}><summary class="cursor-pointer text-slate-500">외부 단축 서비스 주소 쓰기</summary>
         <label class="block font-semibold mt-1">짧은 주소${H('긴 주소를 URL.KR·TinyURL·Bitly 등에서 줄여 붙여 넣으세요. 외부 서비스는 사정에 따라 막히거나 없어질 수 있어, 오래 쓸 안내문에는 위의 기관 짧은 주소를 권합니다.')}<span class="flex gap-1 mt-1"><input data-short value="${esc(s.shortUrl || '')}" class="qf-in" placeholder="https://url.kr/xxxx"><button type="button" data-save-short class="qf-btn bg-ewelfare-900 text-white whitespace-nowrap">저장</button></span></label></details>
@@ -3133,12 +3141,17 @@ async function openQr() {
         if (fn() === location.pathname.split('/').pop().toLowerCase()) return UI.toast('앱 파일과 다른 이름으로 적어 주세요.', 'err');
         const blob = new Blob([shortFileHtml(s, long, sig)], { type: 'text/html' });
         const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = fn(); a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-        UI.toast(`${fn()} 파일을 내려받았습니다. CMS에서 quickform.html과 같은 폴더에 올린 뒤 [③ 올린 파일 확인]을 누르세요.`, 'info');
+        UI.toast(`${fn()} 파일을 내려받았습니다. ${hostLabel()}에 quickform.html과 같은 폴더로 올린 뒤 [③ 올린 파일 확인]을 누르세요.`, 'info');
+      });
+      b.querySelector('[data-pubnow]')?.addEventListener('click', async () => {
+        await mutateMain(d => { const x = findSvc(d, s.id); if (x) { x.shortSig = ''; if (!x.shortUrl) x.shortUrl = ownShortUrl(shortName(x)); } });
+        const done = await wrap(() => autoPublish([s.id]), '신청 링크 파일 올리는 중…');
+        if (done?.length) { b.closest('.qf-dialog')?.remove(); openQr(); }
       });
       b.querySelector('[data-chkfile]')?.addEventListener('click', async () => {
         if (!fnOk()) return UI.toast('파일 이름을 확인해 주세요.', 'err');
         const url = ownShortUrl(fn());
-        let t = ''; try { const r = await fetch(url + '?nc=' + Date.now(), { cache: 'no-store' }); if (!r.ok) throw new Error(r.status); t = await r.text(); } catch { return UI.alert(`아직 올라온 파일이 없습니다.\n${esc(url)}\n\nCMS에서 quickform.html과 같은 폴더에 ${esc(fn())} 를 올렸는지 확인해 주세요. (올린 직후면 잠시 뒤 다시 눌러 보세요)`, '파일 없음'); }
+        let t = ''; try { const r = await fetch(url + '?nc=' + Date.now(), { cache: 'no-store' }); if (!r.ok) throw new Error(r.status); t = await r.text(); } catch { return UI.alert(`아직 올라온 파일이 없습니다.\n${esc(url)}\n\n${esc(hostLabel())}에 quickform.html과 같은 폴더로 ${esc(fn())} 를 올렸는지 확인해 주세요. (올린 직후면 잠시 뒤 다시 눌러 보세요)`, '파일 없음'); }
         if (!t.includes(`qf-sig:${sig}`)) return UI.alert(t.includes('qf-sig:') ? '올라온 파일이 예전 설정으로 만든 파일입니다.\n[① 파일 만들기]로 새로 내려받아 다시 올려 주세요.' : '그 주소에 다른 파일이 있습니다. 파일 이름을 확인해 주세요.', '확인 필요');
         await wrap(() => mutateMain(d => { const x = findSvc(d, s.id); if (x) { x.shortUrl = url; x.shortSig = sig; x.linkSig = sig; } }));
         UI.toast('확인했습니다. 이제 QR이 짧은 주소로 나옵니다.'); b.closest('.qf-dialog')?.remove(); openQr();
@@ -4364,7 +4377,7 @@ async function openServiceEditor(id) {
   const fieldRow = f => `<tr data-field="${esc(f.id)}" class="align-top">
     <td class="pr-1 py-0.5"><input data-fl="label" value="${esc(f.label || '')}" class="qf-in" placeholder="질문 제목 (예: 희망 수령 방법)"></td>
     <td class="px-1"><select data-fl="type" class="qf-in !w-28">${Object.entries(FIELD_TYPES).map(([k, v]) => `<option value="${k}" ${k === (f.type || 'text') ? 'selected' : ''}>${v}</option>`).join('')}</select></td>
-    <td class="px-1"><input data-fl="opts" value="${esc((f.opts || []).join(', '))}" class="qf-in ${['choice', 'multi'].includes(f.type) ? '' : 'hidden'}" placeholder="보기를 쉼표로 (예: 직접 수령, 택배)"></td>
+    <td class="px-1"><input data-fl="opts" value="${esc((f.opts || []).join(', '))}" class="qf-in ${['choice', 'multi', 'check'].includes(f.type) ? '' : 'hidden'}" placeholder="보기를 쉼표로 (예: 직접 수령, 택배)"></td>
     <td class="px-1 whitespace-nowrap"><label class="mr-2"><input type="checkbox" data-fl="req" ${f.req ? 'checked' : ''}> 필수</label><label title="신청자 화면에는 안 나오고 직원 입력·명부에만"><input type="checkbox" data-fl="staff" ${f.staff ? 'checked' : ''}> 직원만</label></td>
     <td class="whitespace-nowrap"><button data-fup class="px-1 text-slate-500" title="위로"><i class="fa-solid fa-arrow-up"></i></button><button data-fdel class="text-rose-500 px-1" title="삭제"><i class="fa-solid fa-xmark"></i></button></td></tr>`;
   const itemRow = it => `<tr data-item="${esc(it.id)}"><td class="pr-1 py-0.5"><input data-in="name" value="${esc(it.name)}" class="qf-in"></td><td class="px-1 text-center whitespace-nowrap"><label title="신청서에 이 품목을 보이지 않게 합니다(기존 신청 기록은 그대로)"><input type="checkbox" data-in="hidden" ${it.hidden ? 'checked' : ''}> 숨김</label></td><td class="px-1"><input data-in="price" type="number" min="0" value="${Number(it.price) || 0}" class="qf-in !w-28 text-right"></td><td class="px-1"><input data-in="link" value="${esc(it.link || '')}" class="qf-in" placeholder="https://… (선택)"></td><td><button data-del class="text-rose-500 px-2" title="삭제"><i class="fa-solid fa-xmark"></i></button></td></tr>`;
@@ -4482,7 +4495,7 @@ async function openServiceEditor(id) {
       if (!isSplit && s0.split && DB.applications.some(a => a.serviceId === s0.id && a.facility)) throw new Error('시설이 지정된 신청이 있어 시설별 관리를 끌 수 없습니다.');
       const facilityStaff = {}; (isSplit ? (DB.config.facilities || []) : []).forEach(f => { facilityStaff[f] = { managers: lcList(b.querySelector(`[data-fs="${CSS.escape(f)}|managers"]`)?.value), kiosk: lcList(b.querySelector(`[data-fs="${CSS.escape(f)}|kiosk"]`)?.value) }; });
       if (admin && badK.length) throw new Error(`태블릿 계정 이메일 형식이 아닙니다: ${badK.join(', ')}`);
-      const fields = [...b.querySelectorAll('[data-field]')].map(tr => { const q = k => tr.querySelector(`[data-fl="${k}"]`); const type = q('type').value; return { id: tr.dataset.field, label: q('label').value.trim().replace(/\s+/g, ' '), type, opts: ['choice', 'multi'].includes(type) ? [...new Set(q('opts').value.split(',').map(x => x.trim()).filter(Boolean))] : [], req: q('req').checked, staff: q('staff').checked }; }).filter(f => f.label);
+      const fields = [...b.querySelectorAll('[data-field]')].map(tr => { const q = k => tr.querySelector(`[data-fl="${k}"]`); const type = q('type').value; return { id: tr.dataset.field, label: q('label').value.trim().replace(/\s+/g, ' '), type, opts: ['choice', 'multi'].includes(type) ? [...new Set(q('opts').value.split(',').map(x => x.trim()).filter(Boolean))] : type === 'check' ? [q('opts').value.trim()].filter(Boolean).slice(0, 1) : [], req: q('req').checked, staff: q('staff').checked }; }).filter(f => f.label);
       const badF = fields.find(f => ['choice', 'multi'].includes(f.type) && f.opts.length < 2); if (badF) throw new Error(`"${badF.label}" 질문에 보기를 2개 이상 쉼표로 적어 주세요.`);
       const patch = {
         fields,
@@ -4542,7 +4555,7 @@ async function openServiceEditor(id) {
       b.querySelector('[data-sch="freq"]').addEventListener('change', () => { b.querySelector('[data-sch-mon]').classList.toggle('hidden', fq()); b.querySelector('[data-sch-wk]').classList.toggle('hidden', !fq()); const t = b.querySelector('[data-sch="time"]'); if (fq() && t.value === DEFAULT_SCHEDULE.time) t.value = WEEK_DEF.time; rb.refreshCycles && rb.refreshCycles(); });
       const fb = b.querySelector('[data-fields]');
       b.querySelector('[data-addfield]').onclick = () => { fb.insertAdjacentHTML('beforeend', fieldRow({ id: uid('Q'), label: '', type: 'text' })); fb.lastElementChild.querySelector('[data-fl="label"]').focus(); };
-      fb.addEventListener('change', e => { if (e.target.dataset.fl === 'type') e.target.closest('tr').querySelector('[data-fl="opts"]').classList.toggle('hidden', !['choice', 'multi'].includes(e.target.value)); });
+      fb.addEventListener('change', e => { if (e.target.dataset.fl === 'type') e.target.closest('tr').querySelector('[data-fl="opts"]').classList.toggle('hidden', !['choice', 'multi', 'check'].includes(e.target.value)); });
       fb.addEventListener('click', async e => {
         const tr = e.target.closest('tr'); if (!tr) return;
         if (e.target.closest('[data-fup]')) { e.preventDefault(); if (tr.previousElementSibling) fb.insertBefore(tr, tr.previousElementSibling); return; }
