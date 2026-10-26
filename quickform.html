@@ -450,7 +450,7 @@ const APP_NAME = 'QuickForm';
 /** SharePoint 문서 라이브러리 안의 저장 폴더 기본값. 기관마다 배포 링크에 &folder=경로 로 바꿀 수 있음 */
 const DATA_FOLDER = 'QuickFormData';
 const LEGACY_FOLDERS = ['EWelfareData/QuickForm'];   // 예전 기본값 — 이미 쓰던 기관은 자동으로 이어서 씀
-const APP_VERSION = 'QF-5.5.0 · 10-26 11:00';
+const APP_VERSION = 'QF-5.5.1 · 10-26 12:00';
 const GRAPH = 'https://graph.microsoft.com/v1.0';
 /** 권한 범위: 기본 Sites.ReadWrite.All, 배포 링크에 &perm=selected 면 Sites.Selected(지정한 사이트만) */
 const scopeStr = () => `openid profile email offline_access https://graph.microsoft.com/${Infra.cfg.permSelected ? 'Sites.Selected' : 'Sites.ReadWrite.All'}`;
@@ -2377,7 +2377,7 @@ function applyCfg_(s, r, staff = false) {
   return {
     v: 1, sid: s.id, rid: r.id, i: DB.config.institutionName || '', c: DB.config.privacyContact || '', d: DB.config.piiRetentionDays || 14, ...(DB.config.consentText ? { ct: DB.config.consentText } : {}),
     b: (({ from, ...b }) => b)(svcBank(s)), h: DB.config.webhookUrl || '',
-    s: { n: s.name, ds: s.desc || '', pg: s.programs || [], ut: s.userTypes || [], ug: !!s.useGuardian, gr: !!s.isGrid, dy: s.days || [], it: formItems(s).map(i => i.link ? [i.id, i.name, pubPrice(s, i.price), i.link] : [i.id, i.name, pubPrice(s, i.price)]), mx: Number(s.maxTotal) || 0, qm: qtyMode(s), ...(s.maxPerDay ? { md: Number(s.maxPerDay) } : {}), ...(payMode(s) === 'none' ? { pm: 'n' } : {}), ...(phoneMode(s) !== 'req' ? { ph: phoneMode(s) } : {}), ...(addrMode(s) !== 'off' ? { ad: addrMode(s) } : {}), ...packFields(s, staff), ...packFacs(s, staff), ...(qtyMode(s) === 'date' ? { dt: roundDates(s, r) } : {}), ...(s.closedMsg ? { cm: s.closedMsg } : {}), ...pubPick(s), ...pubLimits(s), ...pubRules(s), ...(hideDl(s) ? { hd: 1 } : {}), ...(s.unit ? { un: s.unit } : {}), ...(s.qtyLabel ? { ql: s.qtyLabel } : {}) },
+    s: { n: s.name, ds: s.desc || '', pg: s.programs || [], ut: s.userTypes || [], ug: !!s.useGuardian, gr: !!s.isGrid, dy: s.days || [], it: formItems(s).map(i => i.link ? [i.id, i.name, pubPrice(s, i.price), i.link] : [i.id, i.name, pubPrice(s, i.price)]), mx: Number(s.maxTotal) || 0, qm: qtyMode(s), ...(s.maxPerDay ? { md: Number(s.maxPerDay) } : {}), ...(payMode(s) === 'none' ? { pm: 'n' } : {}), ...(phoneMode(s) !== 'req' ? { ph: phoneMode(s) } : {}), ...(addrMode(s) !== 'off' ? { ad: addrMode(s) } : {}), ...packFields(s, staff), ...packFacs(s, staff), ...(qtyMode(s) === 'date' ? { dt: roundDates(s, r) } : {}), ...(s.closedMsg ? { cm: s.closedMsg } : {}), ...pubPick(s), ...pubLimits(s), ...pubRules(s), ...(hideDl(s) ? { hd: 1 } : {}), ...(s.unit ? { un: s.unit } : {}), ...(s.qtyLabel ? { ql: s.qtyLabel } : {}), ...(s.formal ? { fm: 1 } : {}) },
     r: { n: r.name, dl: r.deadline || '', vs: r.validStart || '', ve: r.validEnd || '', ps: r.pickupStart || '', pe: r.pickupEnd || '' }
   };
 }
@@ -2400,7 +2400,7 @@ function applyCfg2(s) {
     v: 2, sid: s.id, i: DB.config.institutionName || '', c: DB.config.privacyContact || '', d: DB.config.piiRetentionDays || 14, ...(DB.config.consentText ? { ct: DB.config.consentText } : {}),
     b: (({ from, ...b }) => b)(svcBank(s)), h: DB.config.webhookUrl || '',
     ...((DB.config.holidays || []).length ? { hol: DB.config.holidays } : {}), ...((DB.config.notHolidays || []).length ? { nh: DB.config.notHolidays } : {}),
-    s: { n: s.name, ds: s.desc || '', pg: s.programs || [], ut: s.userTypes || [], ug: !!s.useGuardian, gr: !!s.isGrid, dy: s.days || [], it: formItems(s).map(i => i.link ? [i.id, i.name, pubPrice(s, i.price), i.link] : [i.id, i.name, pubPrice(s, i.price)]), mx: Number(s.maxTotal) || 0, qm: qtyMode(s), ...(s.maxPerDay ? { md: Number(s.maxPerDay) } : {}), ...(payMode(s) === 'none' ? { pm: 'n' } : {}), ...(phoneMode(s) !== 'req' ? { ph: phoneMode(s) } : {}), ...(addrMode(s) !== 'off' ? { ad: addrMode(s) } : {}), ...packFields(s), ...packFacs(s), mo: mode, ...(s.closedMsg ? { cm: s.closedMsg } : {}), ...pubPick(s), ...pubLimits(s), ...pubRules(s), ...(hideDl(s) ? { hd: 1 } : {}), ...(s.unit ? { un: s.unit } : {}), ...(s.qtyLabel ? { ql: s.qtyLabel } : {}) }
+    s: { n: s.name, ds: s.desc || '', pg: s.programs || [], ut: s.userTypes || [], ug: !!s.useGuardian, gr: !!s.isGrid, dy: s.days || [], it: formItems(s).map(i => i.link ? [i.id, i.name, pubPrice(s, i.price), i.link] : [i.id, i.name, pubPrice(s, i.price)]), mx: Number(s.maxTotal) || 0, qm: qtyMode(s), ...(s.maxPerDay ? { md: Number(s.maxPerDay) } : {}), ...(payMode(s) === 'none' ? { pm: 'n' } : {}), ...(phoneMode(s) !== 'req' ? { ph: phoneMode(s) } : {}), ...(addrMode(s) !== 'off' ? { ad: addrMode(s) } : {}), ...packFields(s), ...packFacs(s), mo: mode, ...(s.closedMsg ? { cm: s.closedMsg } : {}), ...pubPick(s), ...pubLimits(s), ...pubRules(s), ...(hideDl(s) ? { hd: 1 } : {}), ...(s.unit ? { un: s.unit } : {}), ...(s.qtyLabel ? { ql: s.qtyLabel } : {}), ...(s.formal ? { fm: 1 } : {}) }
   };
   c.sf = shortName(s);
   if (mode === 'auto') {
@@ -3088,6 +3088,7 @@ async function freshApplyCode(code) {
 async function renderApplyPage2(code, pick = '') {
   const c = await unpackCfg(code);
   if (!c || !c.s) return renderApplyCore(null);
+  if (c.s.fm) formalize(document.body);
   const now = new Date(), { cur, past, H, events } = resolveRound(c, now), dlx = d => c.s.hd ? krDate(String(d).slice(0, 10)) : krDateTime(d);
   [cur, past].forEach(r => { if (r && c.s.hd) r.hideDl = true; });
   const conf = { institutionName: c.i, privacyContact: c.c };
@@ -3121,7 +3122,17 @@ async function renderApplyPage2(code, pick = '') {
   const recent = past && (now - parseDT(past.deadline)) < 20 * 86400000;
   renderApplyCore(c1, { notice: recent ? `${past.name} 신청은 ${dlx(past.deadline)}에 마감되었어요. 지금은 ${cur.name} 신청을 받고 있어요.` : '', onClosed: () => renderApplyPage2(code) }); back();
 }
+/* 공식 문체: 신청자 화면의 '~해요' 말투를 '~합니다'로 (서비스 설정 [공식 문체]) */
+const FORMAL_RULES = [[/아니에요/g, '아닙니다'], [/(하|되|있으|없으|계|오)신가요\?/g, '$1십니까?'], [/인가요\?/g, '입니까?'], [/(할|볼|받을|하실|오실|받으실|드릴|쓸|고를|넣을) 수 있어요/g, '$1 수 있습니다'], [/있어요/g, '있습니다'], [/없어요/g, '없습니다'], [/드릴게요/g, '드리겠습니다'], [/할게요/g, '하겠습니다'], [/드려요/g, '드립니다'], [/되었어요/g, '되었습니다'], [/됐어요/g, '되었습니다'], [/돼요/g, '됩니다'], [/해요/g, '합니다'], [/이에요/g, '입니다'], [/예요/g, '입니다'], [/주세요/g, '주십시오'], [/([가-힣])세요/g, '$1십시오'], [/골라요/g, '고릅니다'], [/열려요/g, '열립니다'], [/와요/g, '옵니다'], [/봐요/g, '봅니다'], [/줘요/g, '줍니다']];
+const formalText = t => FORMAL_RULES.reduce((x, [re, to]) => x.replace(re, to), t);
+function formalize(root) {
+  if (!root) return;
+  const fix = n => { if (n.nodeType === 3) { if (/요/.test(n.nodeValue)) { const v = formalText(n.nodeValue); if (v !== n.nodeValue) n.nodeValue = v; } return; } if (n.nodeType !== 1 || /^(SCRIPT|STYLE|TEXTAREA)$/.test(n.tagName)) return; ['placeholder', 'title', 'aria-label'].forEach(a => { const v = n.getAttribute?.(a); if (v && /요/.test(v)) n.setAttribute(a, formalText(v)); }); n.childNodes.forEach(fix); };
+  fix(root);
+  if (!root._fmObs) { root._fmObs = new MutationObserver(ms => ms.forEach(m => { m.addedNodes.forEach(fix); if (m.type === 'characterData') fix(m.target); })); root._fmObs.observe(root, { childList: true, subtree: true, characterData: true }); }
+}
 function renderApplyCore(c, opts = {}) {
+  if (c?.s?.fm) setTimeout(() => formalize(document.body), 0);
   document.body.className = 'min-h-screen bg-slate-100 text-slate-800';
   document.body.innerHTML = `<div id="ap" class="max-w-lg mx-auto px-4 py-5 pb-28"></div><div id="modal-root"></div><div id="toast-root" class="fixed bottom-24 left-1/2 -translate-x-1/2 z-[80] space-y-2 w-[90%] max-w-sm"></div>`;
   const root = document.getElementById('ap');
@@ -3560,6 +3571,7 @@ async function kioskApply(rid = '') {
       <button data-submit class="flex-[2] py-3.5 rounded-xl bg-ewelfare-900 text-white text-base font-bold">신청하기</button></div></div>`;
   document.body.appendChild(ov);
   const form = ApplyForm.render(ov.querySelector('[data-form]'), applyCfg(s, r), { mode: 'public' });
+  if (s.formal) formalize(ov);
   ov.querySelector('[data-cancel]').onclick = () => close();
   ['input', 'change', 'pointerdown'].forEach(ev => ov.querySelector('[data-body]')?.addEventListener(ev, () => { ov.dataset.touched = '1'; }, { once: true }));
   const btn = ov.querySelector('[data-submit]');
@@ -4314,6 +4326,7 @@ async function openServiceEditor(id) {
         <label>마감 시각<input type="time" data-sch="time" value="${esc(s0.schedule?.time || (isWeekly(s0.schedule) ? WEEK_DEF.time : DEFAULT_SCHEDULE.time))}" class="qf-in mt-1"></label>
       </div>
       <label class="flex items-center gap-2"><input type="checkbox" data-s="hideDlTime" ${hideDl(s0) ? 'checked' : ''}> <span>신청자 화면에 마감 <b>시각</b>은 숨기고 날짜만 보이기</span>${H('예: 23:59 마감이어도 신청자에게는 "10월 22일(목)까지"로만 보입니다. 실제로는 정한 시각까지 받습니다.')}</label>
+      <label class="flex items-center gap-2"><input type="checkbox" data-s="formal" ${s0.formal ? 'checked' : ''}> <span>신청자 화면을 <b>공식 문체</b>로 (예: "신청할 수 있어요" → "신청할 수 있습니다")</span>${H('행사 초청 등 격식이 필요한 신청서에 씁니다. 앱이 쓰는 안내 문구도 함께 바뀝니다. 직접 쓴 안내문은 처음부터 공식 문체로 적어 주세요.')}</label>
       <label class="block">마감 후 안내${H('비우면 기본 문구가 나옵니다. 자동 반복은 다음 회차로 바로 안내합니다.')}<input data-s="closedMsg" value="${esc(s0.closedMsg || '')}" class="qf-in mt-1" placeholder="기본 문구 사용"></label>`)}
     ${SEC('신청서 항목', '', `
       <div><p>관련 프로그램${H('고른 프로그램만 신청자가 선택합니다. 하나도 안 고르면 이 질문이 빠집니다. 목록은 [설정 → 목록 관리].')}</p><div class="mt-1">${chipToggles('programs', DB.config.programs || [], s0.programs || [])}</div>
@@ -4397,7 +4410,7 @@ async function openServiceEditor(id) {
         programItems: (() => { const o = {}, ids = items.filter(i => !i.hidden).map(i => i.id); b.querySelectorAll('[data-pirow]').forEach(row => { const on = [...row.querySelectorAll('[data-pi]:checked')].map(x => x.dataset.pi).filter(x => ids.includes(x)); if (on.length && on.length < ids.length) o[row.dataset.pirow] = on; }); return o; })(),
         notice: g('notice').value.replace(/\r/g, '').trim(), pickupDays: readChips(b, 'pickupDays'), pickupHours: g('pickupHours').value.trim(), pickupPlace: g('pickupPlace').value.trim(),
         userTypes: readChips(b, 'userTypes'), useGuardian: g('useGuardian').checked,
-        payMode: g('payMode').value, phoneMode: g('phoneMode').value, addrMode: g('addrMode').value, useFund: g('useFund').checked, funds: readChips(b, 'funds'), qtyMode: g('qtyMode').value, isGrid: g('qtyMode').value !== 'total', closedMsg: g('closedMsg').value.trim(), hideDlTime: g('hideDlTime').checked, qtyLabel: g('qtyLabel').value.trim().slice(0, 30), unit: g('unit').value.trim().slice(0, 5),
+        payMode: g('payMode').value, phoneMode: g('phoneMode').value, addrMode: g('addrMode').value, useFund: g('useFund').checked, funds: readChips(b, 'funds'), qtyMode: g('qtyMode').value, isGrid: g('qtyMode').value !== 'total', closedMsg: g('closedMsg').value.trim(), hideDlTime: g('hideDlTime').checked, formal: g('formal').checked, qtyLabel: g('qtyLabel').value.trim().slice(0, 30), unit: g('unit').value.trim().slice(0, 5),
         ...(admin ? { managers, kioskUsers, facilityStaff } : {}),
         days: g('qtyMode').value !== 'total' ? readChips(b, 'days') : [], items, reportTitle: g('reportTitle').value.trim(), reportFooter: g('reportFooter').value.trim()
       };
