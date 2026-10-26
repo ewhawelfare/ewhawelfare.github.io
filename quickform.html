@@ -450,7 +450,7 @@ const APP_NAME = 'QuickForm';
 /** SharePoint 문서 라이브러리 안의 저장 폴더 기본값. 기관마다 배포 링크에 &folder=경로 로 바꿀 수 있음 */
 const DATA_FOLDER = 'QuickFormData';
 const LEGACY_FOLDERS = ['EWelfareData/QuickForm'];   // 예전 기본값 — 이미 쓰던 기관은 자동으로 이어서 씀
-const APP_VERSION = 'QF-5.6.0 · 10-26 13:30';
+const APP_VERSION = 'QF-5.7.0 · 10-26 14:30';
 const GRAPH = 'https://graph.microsoft.com/v1.0';
 /** 권한 범위: 기본 Sites.ReadWrite.All, 배포 링크에 &perm=selected 면 Sites.Selected(지정한 사이트만) */
 const scopeStr = () => `openid profile email offline_access https://graph.microsoft.com/${Infra.cfg.permSelected ? 'Sites.Selected' : 'Sites.ReadWrite.All'}`;
@@ -935,7 +935,7 @@ const findSvc = (d, id) => d.services.find(s => s.id === id);
 const findRound = (d, rid) => { for (const s of d.services) { const r = s.rounds.find(x => x.id === rid); if (r) return r; } return null; };
 function curSvc() {
   const vis = visibleServices();
-  let s = vis.find(x => x.id === VIEW.serviceId) || vis[0] || null;
+  let s = vis.find(x => x.id === VIEW.serviceId) || vis.find(x => !x.ended) || vis[0] || null;
   if (s && s.id !== VIEW.serviceId) { VIEW.serviceId = s.id; VIEW.roundId = s.currentRoundId; }
   return s;
 }
@@ -1396,7 +1396,22 @@ function switchTab(tab) {
   $('#view-title').textContent = TITLES[tab];
   renderAll();
 }
+/** 서비스 고르기 목록: 분류별로 묶음 ([설정 → 목록 관리 → 분류] 순서), 시설이 여럿이면 이름 뒤에 시설 */
+function serviceOptions(list, selId) {
+  const order = DB.config.categories || [], facs = new Set(list.map(x => x.facility || '')), multiFac = facs.size > 1;
+  const opt = x => `<option value="${esc(x.id)}" ${x.id === selId ? 'selected' : ''}>${esc(x.name)}${multiFac && x.facility ? ` · ${esc(x.facility)}` : ''}${x.ended ? ' (종료)' : ''}</option>`;
+  const cats = [...new Set(list.map(x => x.category || '기타'))].sort((a, b) => ((order.indexOf(a) + 1) || 99) - ((order.indexOf(b) + 1) || 99) || a.localeCompare(b, 'ko'));
+  const sorted = c => list.filter(x => (x.category || '기타') === c).sort((a, b) => (a.ended ? 1 : 0) - (b.ended ? 1 : 0));
+  return cats.length > 1 ? cats.map(c => `<optgroup label="${esc(c)}">${sorted(c).map(opt).join('')}</optgroup>`).join('') : list.map(opt).join('');
+}
+async function toggleEnded(id) {
+  const s = findSvc(DB, id); if (!s) return;
+  if (!s.ended && !await UI.confirm(`"${esc(s.name)}"을(를) 종료로 표시할까요?\n왼쪽 서비스 목록에서 빠지고, 기록·통계는 그대로 남습니다. 신청 링크는 마감 전이면 계속 열립니다.`, { okText: '종료로 표시' })) return;
+  await wrap(() => mutateMain(d => { const x = findSvc(d, id); if (x) x.ended = !x.ended; }));
+  UI.toast(s.ended ? '다시 목록에 보이게 했습니다.' : '종료로 표시했습니다. [종료된 서비스 보기]로 다시 열 수 있습니다.'); renderAll();
+}
 function setService(id) {
+  if (id === '__ended') { VIEW.showEnded = !VIEW.showEnded; renderAll(); return; }
   if (KioskLock.get()) return;
   const s = findSvc(DB, id); if (!s) return;
   VIEW.serviceId = s.id; VIEW.roundId = s.currentRoundId; saveView();
@@ -1514,11 +1529,11 @@ function renderAll() {
   $('#role-badge').textContent = !adminsSet() ? '총괄관리자 미지정' : admin ? '총괄관리자' : kioskOnly() ? '태블릿 계정' : (visibleServices().length ? `담당: ${visibleServices().map(x => x.name).join(', ')}` : '배정 없음');
   $$('[data-nav="config"]').forEach(b => b.classList.toggle('hidden', !admin));
   $('#btn-new-service').classList.toggle('hidden', !admin);
-  const opt = x => `<option value="${esc(x.id)}" ${x.id === s?.id ? 'selected' : ''}>${esc(x.name)}</option>`, vis = visibleServices();
-  const facs = [...new Set(vis.map(x => x.facility || ''))];
-  const svcOpts = facs.length > 1 || facs[0] ? facs.sort((a, b) => (a ? 0 : 1) - (b ? 0 : 1) || a.localeCompare(b, 'ko')).map(f => `<optgroup label="${esc(f || '공통')}">${vis.filter(x => (x.facility || '') === f).map(opt).join('')}</optgroup>`).join('') : vis.map(opt).join('');
+  const allVis = visibleServices(), nEnded = allVis.filter(x => x.ended).length;
+  const svcOpts = serviceOptions(allVis.filter(x => !x.ended || VIEW.showEnded || x.id === s?.id), s?.id) + (nEnded && MODE !== 'kiosk' ? `<option value="__ended">${VIEW.showEnded ? '— 종료된 서비스 숨기기' : `— 종료된 서비스 보기 (${nEnded})`}</option>` : '');
+  const kioskOpts = serviceOptions(allVis.filter(x => !x.ended || x.id === s?.id), s?.id);
   const roundOpts = s ? s.rounds.slice().reverse().map(x => `<option value="${esc(x.id)}" ${x.id === r?.id ? 'selected' : ''}>${x.extra ? '[행사] ' : ''}${esc(x.name)}${x.id === s.currentRoundId ? ' (현재)' : ''}${x.piiPurgedAt ? ' · 파기됨' : ''}</option>`).join('') : '';
-  $('#active-service-select').innerHTML = svcOpts; $('#kiosk-service-select').innerHTML = svcOpts;
+  $('#active-service-select').innerHTML = svcOpts; $('#kiosk-service-select').innerHTML = kioskOpts;
   $('#active-round-select').innerHTML = roundOpts; $('#kiosk-round-select').innerHTML = roundOpts;
   if (!s) {
     if (VIEW.tab === 'config' && admin) return renderConfig();
@@ -3975,12 +3990,13 @@ function renderConfig() {
         <div class="flex flex-wrap items-center gap-1.5 px-2 py-1.5"><span class="w-32 shrink-0 font-semibold whitespace-nowrap">연결된 앱${H('같은 기관의 다른 업무 앱(예: 통합업무시스템)으로 가는 메뉴를 왼쪽 아래에 둡니다.')}</span><span class="text-slate-600">${linkedApps().length ? linkedApps().map(x => esc(x.name)).join(', ') : '없음'}</span><button onclick="editLinkedApps()" class="qf-btn !py-0.5 bg-white border">편집</button></div>
         <div class="flex flex-wrap items-center gap-1.5 px-2 py-1.5"><span class="w-32 shrink-0 font-semibold whitespace-nowrap">Teams 앱${H('직원 관리 화면을 Teams 왼쪽 앱으로 쓰게 하는 설치 파일(zip). Teams 관리 센터 → Teams 앱 → 앱 관리 → [작업] → 새 앱 업로드로 한 번 올리면 끝. Teams로 쓰지 않으면 필요 없습니다.')}</span><button onclick="makeTeamsPackage()" class="qf-btn !py-0.5 bg-white border">패키지 만들기</button></div>
       </div></details>` : ''}`;
-  $('#cfg-services-list').innerHTML = DB.services.map(s => {
+  const corder = DB.config.categories || [];
+  $('#cfg-services-list').innerHTML = DB.services.slice().sort((a, b) => (a.ended ? 1 : 0) - (b.ended ? 1 : 0) || (((corder.indexOf(a.category) + 1) || 99) - ((corder.indexOf(b.category) + 1) || 99))).map(s => {
     const n = DB.applications.filter(a => a.serviceId === s.id).length, cr = s.rounds.find(r => r.id === s.currentRoundId);
     return `<div class="p-4 border border-slate-200 rounded-lg bg-slate-50 space-y-2 text-xs">
       <div class="flex items-center justify-between gap-2">
-        <span class="font-bold text-sm text-slate-900">${esc(s.name)} <span class="text-xs font-normal text-slate-500">(${esc([s.facility, s.category].filter(Boolean).join(' · '))})</span></span>
-        <span class="flex gap-3"><button onclick="openServiceEditor('${esc(s.id)}')" class="text-ewelfare-700 hover:underline font-semibold">편집</button><button onclick="openFormPreview(findSvc(DB,'${esc(s.id)}'), findSvc(DB,'${esc(s.id)}').rounds.find(r => r.id === findSvc(DB,'${esc(s.id)}').currentRoundId))" class="text-ewelfare-700 hover:underline font-semibold">신청서 미리보기</button><button onclick="openFolderAccess('${esc(s.id)}')" class="text-ewelfare-700 hover:underline font-semibold">폴더 권한</button><button onclick="deleteService('${esc(s.id)}')" class="text-rose-600 hover:underline">삭제</button></span>
+        <span class="font-bold text-sm ${s.ended ? 'text-slate-400' : 'text-slate-900'}">${s.ended ? '<span class="text-[11px] px-1.5 py-0.5 rounded bg-slate-200 text-slate-600 mr-1">종료</span>' : ''}${esc(s.name)} <span class="text-xs font-normal text-slate-500">(${esc([s.facility, s.category].filter(Boolean).join(' · '))})</span></span>
+        <span class="flex gap-3"><button onclick="openServiceEditor('${esc(s.id)}')" class="text-ewelfare-700 hover:underline font-semibold">편집</button><button onclick="openFormPreview(findSvc(DB,'${esc(s.id)}'), findSvc(DB,'${esc(s.id)}').rounds.find(r => r.id === findSvc(DB,'${esc(s.id)}').currentRoundId))" class="text-ewelfare-700 hover:underline font-semibold">신청서 미리보기</button><button onclick="openFolderAccess('${esc(s.id)}')" class="text-ewelfare-700 hover:underline font-semibold">폴더 권한</button><button onclick="toggleEnded('${esc(s.id)}')" class="text-slate-600 hover:underline">${s.ended ? '다시 사용' : '종료'}</button><button onclick="deleteService('${esc(s.id)}')" class="text-rose-600 hover:underline">삭제</button></span>
       </div>
       <p class="${lcList(s.managers).length ? 'text-slate-700' : 'text-amber-700'}"><i class="fa-solid fa-user-tie"></i> 담당자: ${lcList(s.managers).length ? lcList(s.managers).map(esc).join(', ') : '미지정 (총괄관리자만 볼 수 있음)'}</p>
       <p class="text-slate-600">${esc(s.desc || '')}</p>
