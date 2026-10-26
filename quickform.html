@@ -450,7 +450,7 @@ const APP_NAME = 'QuickForm';
 /** SharePoint 문서 라이브러리 안의 저장 폴더 기본값. 기관마다 배포 링크에 &folder=경로 로 바꿀 수 있음 */
 const DATA_FOLDER = 'QuickFormData';
 const LEGACY_FOLDERS = ['EWelfareData/QuickForm'];   // 예전 기본값 — 이미 쓰던 기관은 자동으로 이어서 씀
-const APP_VERSION = 'QF-5.4.3 · 10-20 13:00';
+const APP_VERSION = 'QF-5.5.0 · 10-26 11:00';
 const GRAPH = 'https://graph.microsoft.com/v1.0';
 /** 권한 범위: 기본 Sites.ReadWrite.All, 배포 링크에 &perm=selected 면 Sites.Selected(지정한 사이트만) */
 const scopeStr = () => `openid profile email offline_access https://graph.microsoft.com/${Infra.cfg.permSelected ? 'Sites.Selected' : 'Sites.ReadWrite.All'}`;
@@ -2377,11 +2377,11 @@ function applyCfg_(s, r, staff = false) {
   return {
     v: 1, sid: s.id, rid: r.id, i: DB.config.institutionName || '', c: DB.config.privacyContact || '', d: DB.config.piiRetentionDays || 14, ...(DB.config.consentText ? { ct: DB.config.consentText } : {}),
     b: (({ from, ...b }) => b)(svcBank(s)), h: DB.config.webhookUrl || '',
-    s: { n: s.name, ds: s.desc || '', pg: s.programs || [], ut: s.userTypes || [], ug: !!s.useGuardian, gr: !!s.isGrid, dy: s.days || [], it: formItems(s).map(i => i.link ? [i.id, i.name, pubPrice(s, i.price), i.link] : [i.id, i.name, pubPrice(s, i.price)]), mx: Number(s.maxTotal) || 0, qm: qtyMode(s), ...(s.maxPerDay ? { md: Number(s.maxPerDay) } : {}), ...(payMode(s) === 'none' ? { pm: 'n' } : {}), ...(phoneMode(s) !== 'req' ? { ph: phoneMode(s) } : {}), ...(addrMode(s) !== 'off' ? { ad: addrMode(s) } : {}), ...packFields(s, staff), ...packFacs(s, staff), ...(qtyMode(s) === 'date' ? { dt: roundDates(s, r) } : {}), ...(s.closedMsg ? { cm: s.closedMsg } : {}), ...pubPick(s), ...pubLimits(s), ...pubRules(s), ...(hideDl(s) ? { hd: 1 } : {}) },
+    s: { n: s.name, ds: s.desc || '', pg: s.programs || [], ut: s.userTypes || [], ug: !!s.useGuardian, gr: !!s.isGrid, dy: s.days || [], it: formItems(s).map(i => i.link ? [i.id, i.name, pubPrice(s, i.price), i.link] : [i.id, i.name, pubPrice(s, i.price)]), mx: Number(s.maxTotal) || 0, qm: qtyMode(s), ...(s.maxPerDay ? { md: Number(s.maxPerDay) } : {}), ...(payMode(s) === 'none' ? { pm: 'n' } : {}), ...(phoneMode(s) !== 'req' ? { ph: phoneMode(s) } : {}), ...(addrMode(s) !== 'off' ? { ad: addrMode(s) } : {}), ...packFields(s, staff), ...packFacs(s, staff), ...(qtyMode(s) === 'date' ? { dt: roundDates(s, r) } : {}), ...(s.closedMsg ? { cm: s.closedMsg } : {}), ...pubPick(s), ...pubLimits(s), ...pubRules(s), ...(hideDl(s) ? { hd: 1 } : {}), ...(s.unit ? { un: s.unit } : {}), ...(s.qtyLabel ? { ql: s.qtyLabel } : {}) },
     r: { n: r.name, dl: r.deadline || '', vs: r.validStart || '', ve: r.validEnd || '', ps: r.pickupStart || '', pe: r.pickupEnd || '' }
   };
 }
-const cfgSvc = c => ({ ...(c.s.pk ? { pickupDays: c.s.pk[0] || [], pickupHours: c.s.pk[1] || '', pickupPlace: c.s.pk[2] || '' } : {}), programLimits: c.s.pl || {}, programItems: c.s.pi || {}, personMax: c.s.px || 0, typeRules: Object.fromEntries(Object.entries(c.s.tr || {}).map(([k, v]) => [k, { items: v.i || [], perDay: v.d || 0 }])), notice: c.s.nt || '', hideDlTime: !!c.s.hd, id: c.sid, name: c.s.n, desc: c.s.ds, programs: c.s.pg, userTypes: c.s.ut, useGuardian: c.s.ug, isGrid: c.s.gr, qtyMode: c.s.qm || (c.s.gr ? 'weekday' : 'total'), dates: c.s.dt || [], closedMsg: c.s.cm || '', days: c.s.dy, maxPerDay: c.s.md || 0, items: c.s.it.map(([id, name, price, link]) => ({ id, name, price, link: /^https?:\/\//i.test(link || '') ? link : '', ...((c.s.hi || []).includes(id) ? { hidden: true } : {}) })), maxTotal: c.s.mx, payMode: c.s.pm === 'n' ? 'none' : 'deposit', phoneMode: c.s.ph || 'req', addrMode: c.s.ad || 'off', fields: (c.s.x || []).map(([id, label, type, opts, req, st]) => ({ id, label, type, opts: opts || [], req: !!req, staff: !!st })), facilities: c.s.fs || [] });
+const cfgSvc = c => ({ ...(c.s.pk ? { pickupDays: c.s.pk[0] || [], pickupHours: c.s.pk[1] || '', pickupPlace: c.s.pk[2] || '' } : {}), programLimits: c.s.pl || {}, programItems: c.s.pi || {}, personMax: c.s.px || 0, typeRules: Object.fromEntries(Object.entries(c.s.tr || {}).map(([k, v]) => [k, { items: v.i || [], perDay: v.d || 0 }])), notice: c.s.nt || '', hideDlTime: !!c.s.hd, unit: c.s.un || '', qtyLabel: c.s.ql || '', id: c.sid, name: c.s.n, desc: c.s.ds, programs: c.s.pg, userTypes: c.s.ut, useGuardian: c.s.ug, isGrid: c.s.gr, qtyMode: c.s.qm || (c.s.gr ? 'weekday' : 'total'), dates: c.s.dt || [], closedMsg: c.s.cm || '', days: c.s.dy, maxPerDay: c.s.md || 0, items: c.s.it.map(([id, name, price, link]) => ({ id, name, price, link: /^https?:\/\//i.test(link || '') ? link : '', ...((c.s.hi || []).includes(id) ? { hidden: true } : {}) })), maxTotal: c.s.mx, payMode: c.s.pm === 'n' ? 'none' : 'deposit', phoneMode: c.s.ph || 'req', addrMode: c.s.ad || 'off', fields: (c.s.x || []).map(([id, label, type, opts, req, st]) => ({ id, label, type, opts: opts || [], req: !!req, staff: !!st })), facilities: c.s.fs || [] });
 const cfgRound = c => ({ id: c.rid, name: c.r.n, deadline: c.r.dl, validStart: c.r.vs, validEnd: c.r.ve, pickupStart: c.r.ps || '', pickupEnd: c.r.pe || '' });
 const cfgConf = c => ({ institutionName: c.i, privacyContact: c.c, piiRetentionDays: c.d, consentText: c.ct || '' });
 const encCfg = c => b64url(new TextEncoder().encode(JSON.stringify(c)));
@@ -2400,7 +2400,7 @@ function applyCfg2(s) {
     v: 2, sid: s.id, i: DB.config.institutionName || '', c: DB.config.privacyContact || '', d: DB.config.piiRetentionDays || 14, ...(DB.config.consentText ? { ct: DB.config.consentText } : {}),
     b: (({ from, ...b }) => b)(svcBank(s)), h: DB.config.webhookUrl || '',
     ...((DB.config.holidays || []).length ? { hol: DB.config.holidays } : {}), ...((DB.config.notHolidays || []).length ? { nh: DB.config.notHolidays } : {}),
-    s: { n: s.name, ds: s.desc || '', pg: s.programs || [], ut: s.userTypes || [], ug: !!s.useGuardian, gr: !!s.isGrid, dy: s.days || [], it: formItems(s).map(i => i.link ? [i.id, i.name, pubPrice(s, i.price), i.link] : [i.id, i.name, pubPrice(s, i.price)]), mx: Number(s.maxTotal) || 0, qm: qtyMode(s), ...(s.maxPerDay ? { md: Number(s.maxPerDay) } : {}), ...(payMode(s) === 'none' ? { pm: 'n' } : {}), ...(phoneMode(s) !== 'req' ? { ph: phoneMode(s) } : {}), ...(addrMode(s) !== 'off' ? { ad: addrMode(s) } : {}), ...packFields(s), ...packFacs(s), mo: mode, ...(s.closedMsg ? { cm: s.closedMsg } : {}), ...pubPick(s), ...pubLimits(s), ...pubRules(s), ...(hideDl(s) ? { hd: 1 } : {}) }
+    s: { n: s.name, ds: s.desc || '', pg: s.programs || [], ut: s.userTypes || [], ug: !!s.useGuardian, gr: !!s.isGrid, dy: s.days || [], it: formItems(s).map(i => i.link ? [i.id, i.name, pubPrice(s, i.price), i.link] : [i.id, i.name, pubPrice(s, i.price)]), mx: Number(s.maxTotal) || 0, qm: qtyMode(s), ...(s.maxPerDay ? { md: Number(s.maxPerDay) } : {}), ...(payMode(s) === 'none' ? { pm: 'n' } : {}), ...(phoneMode(s) !== 'req' ? { ph: phoneMode(s) } : {}), ...(addrMode(s) !== 'off' ? { ad: addrMode(s) } : {}), ...packFields(s), ...packFacs(s), mo: mode, ...(s.closedMsg ? { cm: s.closedMsg } : {}), ...pubPick(s), ...pubLimits(s), ...pubRules(s), ...(hideDl(s) ? { hd: 1 } : {}), ...(s.unit ? { un: s.unit } : {}), ...(s.qtyLabel ? { ql: s.qtyLabel } : {}) }
   };
   c.sf = shortName(s);
   if (mode === 'auto') {
@@ -2487,7 +2487,7 @@ const ApplyForm = {
     const hasPrice = s.items.some(i => i.price), PX = Number(s.personMax) || 0, LIMS = [Number(s.maxTotal) || 0, PX].filter(x => x > 0), max = LIMS.length ? Math.min(...LIMS) : 0;
     const deposit = hasPrice && s.payMode === 'deposit', showAmt = hasPrice && (deposit || mode === 'staff');
     const PH = s.phoneMode || 'req', AD = s.addrMode || 'off', staff = mode === 'staff';
-    const qm = s.qtyMode, U = qm === 'total' ? '개' : '장';
+    const qm = s.qtyMode, U = s.unit || (qm === 'total' ? '개' : '장');
     const pick = qm === 'total' && max === 1;   // 1개만 고르는 서비스(선물 등): 수량 대신 고르기
     const days = qm === 'weekday' ? (s.days.length ? s.days : DEFAULT_DAYS) : [];
     const dates = qm === 'date' ? (s.dates || []) : [];
@@ -2504,7 +2504,7 @@ const ApplyForm = {
       ${(s.facilities || []).length ? `<section>${lbl(no(), '시설')}${chipGroup('ap-fac', s.facilities, s.facilities.length === 1 ? s.facilities[0] : '')}</section>` : ''}
       ${s.programs.length ? `<section>${lbl(no(), '관련 프로그램')}
         <select data-f="program" class="${inCls}"><option value="">이용 중인 프로그램을 선택하세요</option>${s.programs.map(p => `<option ${s.programs.length === 1 ? 'selected' : ''}>${esc(p)}</option>`).join('')}</select></section>` : ''}
-      <section>${lbl(no(), '신청자 구분')}${chipGroup('ap-utype', types, types.length === 1 ? types[0] : '')}</section>
+      <section class="${types.length === 1 ? 'hidden' : ''}">${types.length === 1 ? '' : lbl(no(), '신청자 구분')}${chipGroup('ap-utype', types, types.length === 1 ? types[0] : '')}</section>
       ${s.useGuardian ? `<section data-proxybox class="hidden rounded-xl border border-ewelfare-200 bg-ewelfare-50/60 p-4 space-y-3">
         <label class="flex items-center gap-3 text-[15px] font-bold"><input type="checkbox" data-f="isProxy" class="w-5 h-5 accent-emerald-800"> 이용자의 보호자입니다 (대리 신청)</label>
         <div data-proxy class="hidden space-y-3">
@@ -2531,7 +2531,7 @@ const ApplyForm = {
         : f.type === 'number' ? `<input data-x="${esc(f.id)}" type="number" inputmode="numeric" class="${inCls}">`
         : f.type === 'date' ? `<input data-x="${esc(f.id)}" type="date" class="${inCls}">`
         : `<input data-x="${esc(f.id)}" maxlength="100" class="${inCls}">`}</section>`).join('')}
-      <section>${lbl(no(), '신청 내역')}
+      <section>${lbl(no(), s.qtyLabel || '신청 내역')}
         ${PX && !pick ? `<p class="text-sm text-slate-600 mb-2">한 분이 이번 회차에 <b>최대 ${PX}${U}</b>까지 신청할 수 있어요. 나눠서 신청하셔도 합쳐서 계산해요.</p>` : ''}
         ${pick ? '<p class="text-sm text-slate-600 mb-2">하나를 골라 주세요.</p>' : max && qm === 'total' ? `<p class="text-sm text-slate-600 mb-2">한 번에 <b>최대 ${max}${U}</b>까지 신청할 수 있어요.</p>` : ''}
         ${!pick && qm !== 'total' && s.items.some(i => i.link) ? `<p class="text-sm mb-2">${s.items.filter(i => i.link).map(i => `<a href="${esc(i.link)}" target="_blank" rel="noopener" class="text-ewelfare-700 underline mr-3">${esc(i.name)} 보기</a>`).join('')}</p>` : ''}
@@ -2644,6 +2644,7 @@ const ApplyForm = {
       if (e.target.closest('[data-copydep]')) { const d = depName(); d ? copyText(d, '입금자명을 복사했습니다.') : UI.toast('성명과 연락처를 먼저 입력하세요.', 'err'); }
     });
     sync();
+    if (qm === 'total' && !pick && s.items.length === 1 && !staff) { const q1 = el.querySelector('select[data-q]'); if (q1 && q1.value === '0' && q1.options.length > 1) { q1.value = '1'; sync({ target: q1 }); } }   // 항목 하나(참석 인원 등)는 1로 시작
     { const one = addSel ? [...addSel.options].filter(o => o.value && !o.disabled) : []; if (one.length === 1 && dayList && !dayList.children.length) { addDay(one[0].value); sync(); } }   // 하루짜리(행사 등)는 날짜를 바로 넣어 둠
     return {
       collect() {
@@ -4331,6 +4332,8 @@ async function openServiceEditor(id) {
           <option value="date" ${qtyMode(s0) === 'date' ? 'selected' : ''}>날짜별</option>
           <option value="weekday" ${qtyMode(s0) === 'weekday' ? 'selected' : ''}>요일별</option>
           <option value="total" ${qtyMode(s0) === 'total' ? 'selected' : ''}>합계만</option></select></label>
+        <label>수량 칸 제목${H('신청서의 "신청 내역" 대신 쓸 말. 예: 참석 인원. 비우면 "신청 내역".')}<input data-s="qtyLabel" value="${esc(s0.qtyLabel || '')}" class="qf-in mt-1" placeholder="신청 내역"></label>
+        <label>단위${H('예: 명, 장, 개. 비우면 날짜·요일별은 "장", 합계만은 "개".')}<input data-s="unit" value="${esc(s0.unit || '')}" class="qf-in mt-1 !w-24" placeholder="기본"></label>
       </div>
       <div class="grid md:grid-cols-5 gap-2 items-end">
         <label>최대 수량${H('1회 신청 합계 한도. 0이면 제한 없음.')}<input data-s="maxTotal" type="number" min="0" value="${Number(s0.maxTotal) || 0}" class="qf-in mt-1"></label>
@@ -4394,7 +4397,7 @@ async function openServiceEditor(id) {
         programItems: (() => { const o = {}, ids = items.filter(i => !i.hidden).map(i => i.id); b.querySelectorAll('[data-pirow]').forEach(row => { const on = [...row.querySelectorAll('[data-pi]:checked')].map(x => x.dataset.pi).filter(x => ids.includes(x)); if (on.length && on.length < ids.length) o[row.dataset.pirow] = on; }); return o; })(),
         notice: g('notice').value.replace(/\r/g, '').trim(), pickupDays: readChips(b, 'pickupDays'), pickupHours: g('pickupHours').value.trim(), pickupPlace: g('pickupPlace').value.trim(),
         userTypes: readChips(b, 'userTypes'), useGuardian: g('useGuardian').checked,
-        payMode: g('payMode').value, phoneMode: g('phoneMode').value, addrMode: g('addrMode').value, useFund: g('useFund').checked, funds: readChips(b, 'funds'), qtyMode: g('qtyMode').value, isGrid: g('qtyMode').value !== 'total', closedMsg: g('closedMsg').value.trim(), hideDlTime: g('hideDlTime').checked,
+        payMode: g('payMode').value, phoneMode: g('phoneMode').value, addrMode: g('addrMode').value, useFund: g('useFund').checked, funds: readChips(b, 'funds'), qtyMode: g('qtyMode').value, isGrid: g('qtyMode').value !== 'total', closedMsg: g('closedMsg').value.trim(), hideDlTime: g('hideDlTime').checked, qtyLabel: g('qtyLabel').value.trim().slice(0, 30), unit: g('unit').value.trim().slice(0, 5),
         ...(admin ? { managers, kioskUsers, facilityStaff } : {}),
         days: g('qtyMode').value !== 'total' ? readChips(b, 'days') : [], items, reportTitle: g('reportTitle').value.trim(), reportFooter: g('reportFooter').value.trim()
       };
