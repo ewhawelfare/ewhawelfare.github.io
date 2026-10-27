@@ -449,7 +449,7 @@ const APP_NAME = 'QuickForm';
 /** SharePoint 문서 라이브러리 안의 저장 폴더 기본값. 기관마다 배포 링크에 &folder=경로 로 바꿀 수 있음 */
 const DATA_FOLDER = 'QuickFormData';
 const LEGACY_FOLDERS = ['EWelfareData/QuickForm'];   // 예전 기본값 — 이미 쓰던 기관은 자동으로 이어서 씀
-const APP_VERSION = 'QF-5.9.1 · 10-26 21:00';
+const APP_VERSION = 'QF-5.9.2 · 10-27 09:00';
 const GRAPH = 'https://graph.microsoft.com/v1.0';
 /** 권한 범위: 기본 Sites.ReadWrite.All, 배포 링크에 &perm=selected 면 Sites.Selected(지정한 사이트만) */
 const scopeStr = () => `openid profile email offline_access https://graph.microsoft.com/${Infra.cfg.permSelected ? 'Sites.Selected' : 'Sites.ReadWrite.All'}`;
@@ -3073,7 +3073,7 @@ const isOwnShort = u => { try { const x = new URL(u); return x.origin === locati
 const shortName = s => (s.shortUrl && isOwnShort(s.shortUrl)) ? s.shortUrl.split('/').pop() : (/^[a-z0-9_-]+$/i.test(s.id) ? s.id.toLowerCase() : 'apply') + '.html';
 function shortFileHtml(s, long, sig) {
   const e = t => String(t).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
-  return `<!doctype html>\n<!-- ${APP_NAME} 신청 주소 이동 파일 · qf-sig:${sig} · ${ymdhm()} -->\n<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>${e(s.name)}</title>\n<meta property="og:type" content="website"><meta property="og:title" content="${e(s.name)}${DB.config.institutionName ? ' · ' + e(DB.config.institutionName) : ''}"><meta property="og:description" content="누르면 신청서가 바로 열려요."><meta property="og:image" content="${e(ownShortUrl(shortName(s).replace(/\.html?$/, '') + '-card.png'))}">\n<meta http-equiv="refresh" content="0;url=${e(long)}"><script>location.replace(${JSON.stringify(long).replace(/</g, '\\u003c')})<\/script></head>\n<body style="font-family:sans-serif;text-align:center;padding:48px 16px;color:#334155">${e(s.name)} 신청서로 이동 중입니다…<br><br><a href="${e(long)}" style="color:#0b4136;font-weight:bold">바로 가기</a></body></html>\n`;
+  return `<!doctype html>\n<!-- ${APP_NAME} 신청 주소 이동 파일 · qf-sig:${sig} · ${ymdhm()} -->\n<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>${e(s.name)}</title>\n<meta property="og:type" content="website"><meta property="og:title" content="${e(s.name)}${DB.config.institutionName ? ' · ' + e(DB.config.institutionName) : ''}"><meta property="og:description" content="신청서 바로가기"><meta property="og:image" content="${e(ownShortUrl(shortName(s).replace(/\.html?$/, '') + '-card.png'))}">\n<meta http-equiv="refresh" content="0;url=${e(long)}"><script>location.replace(${JSON.stringify(long).replace(/</g, '\\u003c')})<\/script></head>\n<body style="font-family:sans-serif;text-align:center;padding:48px 16px;color:#334155">${e(s.name)} 신청서로 이동 중입니다…<br><br><a href="${e(long)}" style="color:#0b4136;font-weight:bold">바로 가기</a></body></html>\n`;
 }
 /* ---------- 안내 자료: 카톡·문자 문구, 카톡 카드 이미지, A4 안내문 (지금 서비스 설정으로 자동 작성) ---------- */
 async function guideLink(s) {
@@ -3089,7 +3089,7 @@ function guideFacts(s) {
 function guideText(s, link, kind) {
   const f = guideFacts(s), L = [];
   if (kind === 'sms') return `[${f.inst}] ${f.short} 신청: ${link}`;
-  L.push(`[${f.inst}] ${f.short} 신청 안내`, '', '▶ 신청하기 (누르면 신청서가 바로 열려요)', link, '');
+  L.push(`[${f.inst}] ${f.short} 신청 안내`, '', '▶ 신청하기', link, '');
   L.push(`1. 신청서에서 ${qtyMode(s) === 'date' ? '날짜를 추가하고 수량을 골라' : '내용을 골라'} 신청`);
   if (f.dep) L.push('2. 안내된 계좌로 성함+전화 뒤 4자리 이름으로 입금');
   L.push(`${f.dep ? 3 : 2}. ${f.dep ? '입금 확인 후 ' : ''}${f.place || '안내된 곳'}에서 수령${f.hours ? ` (${f.days}, ${f.hours})` : ''}`);
@@ -3125,7 +3125,7 @@ function guidePosterHtml(s, link, qrUrl) {
 .i{margin:9mm 15mm 0;background:#fff;border:1px solid #d9dccf;border-radius:5mm;padding:6mm 7mm;display:grid;grid-template-columns:repeat(3,1fr);gap:4mm}.i small{display:block;font-size:9pt;color:#4b5753}.i b{font-size:12pt}
 .n{margin:7mm 15mm 0;font-size:11pt;line-height:1.6;white-space:pre-line}.f{margin-top:auto;padding:6mm 15mm;border-top:1px solid #d9dccf;display:flex;justify-content:space-between;font-size:10pt;color:#4b5753}.f b{color:#00462A}
 .bar{position:fixed;top:10px;right:10px}.bar button{font-size:14px;padding:8px 14px;border-radius:8px;border:0;background:#00462A;color:#fff;cursor:pointer}@media print{.bar{display:none}}</style></head><body>
-<div class="bar"><button onclick="print()">인쇄 · PDF로 저장</button></div><div class="p"><div class="h"><small>${e(f.inst)}</small><h1>${e(f.short)},<br>휴대폰으로 신청하세요</h1><p>QR을 찍으면 신청서가 바로 열려요. 로그인은 필요 없어요.</p></div>
+<div class="bar"><button onclick="print()">인쇄 · PDF로 저장</button></div><div class="p"><div class="h"><small>${e(f.inst)}</small><h1>${e(f.short)},<br>휴대폰으로 신청하세요</h1><p>로그인 없이 휴대폰으로 신청할 수 있습니다.</p></div>
 <div class="m"><div class="q"><img src="${qrUrl}" alt="신청 QR"><b>신청 QR</b><span>${e(link.length < 90 ? link.replace(/^https?:\/\//, '') : '')}</span></div><div class="s">${steps.map((x, i) => `<div><i>${i + 1}</i><div><b>${e(x[0])}</b><p>${e(x[1])}</p></div></div>`).join('')}</div></div>
 ${f.place || f.hours ? `<div class="i"><div><small>받는 요일</small><b>${e(f.days)}</b></div><div><small>받는 시간</small><b>${e(f.hours || '-')}</b></div><div><small>받는 곳</small><b>${e(f.place || '-')}</b></div></div>` : ''}
 ${f.notice ? `<div class="n">${e(f.notice).split('\n').map(x => '! ' + x).join('\n')}</div>` : ''}
