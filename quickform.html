@@ -62,6 +62,10 @@ body{word-break:keep-all;overflow-wrap:anywhere}
   .cfg-jump.on{background:rgb(var(--b-700));border-color:rgb(var(--b-700));color:#fff}
   #view-config [id^=cfgsec-], #view-config #cfg-lists, #view-config #cfg-facilities, #view-config #cfg-hol-box, #view-config #cfg-privacy, #view-config #cfg-hook{scroll-margin-top:72px}
 </style>
+<style>/* 열람 전용 계정: 처리·수정 버튼 숨김 */
+.qf-ro #btn-import,.qf-ro #btn-depmatch,.qf-ro #btn-manual,.qf-ro #btn-orgqty,.qf-ro #btn-hold,.qf-ro #btn-unarchive,.qf-ro #btn-lock-fix,.qf-ro #btn-newround,.qf-ro #btn-event,.qf-ro #btn-edit-svc,.qf-ro #btn-fund-bulk,.qf-ro #btn-blocklist,.qf-ro #admin-pii-meta button,.qf-ro #admin-lock-warn,.qf-ro #admin-table-body button{display:none!important}
+.qf-ro #admin-table-body select{pointer-events:none;opacity:.6}
+</style>
 </head>
 <body class="h-screen flex overflow-hidden text-slate-800">
 
@@ -449,7 +453,7 @@ const APP_NAME = 'QuickForm';
 /** SharePoint 문서 라이브러리 안의 저장 폴더 기본값. 기관마다 배포 링크에 &folder=경로 로 바꿀 수 있음 */
 const DATA_FOLDER = 'QuickFormData';
 const LEGACY_FOLDERS = ['EWelfareData/QuickForm'];   // 예전 기본값 — 이미 쓰던 기관은 자동으로 이어서 씀
-const APP_VERSION = 'QF-5.9.2 · 10-27 09:00';
+const APP_VERSION = 'QF-5.10.0 · 10-29 14:00';
 const GRAPH = 'https://graph.microsoft.com/v1.0';
 /** 권한 범위: 기본 Sites.ReadWrite.All, 배포 링크에 &perm=selected 면 Sites.Selected(지정한 사이트만) */
 const scopeStr = () => `openid profile email offline_access https://graph.microsoft.com/${Infra.cfg.permSelected ? 'Sites.Selected' : 'Sites.ReadWrite.All'}`;
@@ -973,16 +977,21 @@ const svcKiosk = (s, d = DB) => [...new Set([...lcList(s?.kioskUsers), ...(ownFa
 /** 서비스 전체를 보는 사람: 총괄관리자·서비스 담당자 */
 const canServiceAll = (s, d = DB) => !!s && (isAdmin(d) || svcManagers(s, d).includes(me()));
 const canService = (s, d = DB) => !!s && (canServiceAll(s, d) || svcFacs(s).some(f => facStaff(s, f, 'managers').includes(me())));
+/** 열람 전용: 신청 현황·결재 문서·통계를 보고 내려받기만 (처리·수정·삭제·설정 불가) */
+const svcViewers = s => lcList(s?.viewers);
+const canView = (s, d = DB) => !!s && (canService(s, d) || svcViewers(s).includes(me()));
+const isRO = (s = curSvc()) => !!s && !canService(s) && canView(s);
+function roBlock() { if (!isRO()) return false; UI.toast('열람 전용 계정은 처리·수정할 수 없습니다.', 'err'); return true; }
 /** 내가 볼 수 있는 시설: 'all' 또는 시설 이름 배열 (kiosk=true면 태블릿 계정 포함) */
 function myFacs(s, kiosk = false) {
-  if (!svcFacs(s).length || canServiceAll(s)) return 'all';
+  if (!svcFacs(s).length || canServiceAll(s) || (!kiosk && svcViewers(s).includes(me()))) return 'all';
   return svcFacs(s).filter(f => facStaff(s, f, 'managers').includes(me()) || (kiosk && facStaff(s, f, 'kiosk').includes(me())));
 }
 const appVisible = (s, a, kiosk = MODE === 'kiosk') => { const m = myFacs(s, kiosk); return m === 'all' || m.includes(a.facility || ''); };
 /** 태블릿 계정: 지정된 서비스의 태블릿(신청·수령 서명) 화면만. 신청 현황·통계·결재 문서·편집은 불가 */
 const canKiosk = (s, d = DB) => !!s && (canService(s, d) || svcKiosk(s, d).includes(me()) || svcFacs(s).some(f => facStaff(s, f, 'kiosk').includes(me())));
 const kioskOnly = (d = DB) => !!d && !isAdmin(d) && !d.services.some(s => canService(s, d)) && d.services.some(s => canKiosk(s, d));
-const visibleServices = () => DB.services.filter(s => MODE === 'kiosk' ? canKiosk(s) : canService(s));
+const visibleServices = () => DB.services.filter(s => MODE === 'kiosk' ? canKiosk(s) : canView(s));
 /** 시설 선택(신청 현황·결재 문서 공용): VIEW.fac = '' 전체, '__none' 미지정, 그 외 시설명 */
 const facFilter = (s, list) => !svcFacs(s).length || !VIEW.fac ? list : list.filter(a => VIEW.fac === '__none' ? !a.facility : a.facility === VIEW.fac);
 function facSelectHtml(s, id) {
@@ -1198,7 +1207,7 @@ async function loadPii(rid, force = false) {
   PII[rid] = { parts, loaded: true, denied: !ok && denied > 0 }; mergePii(rid);
 }
 /** 신청을 다른 시설로 옮기기 (서명 전만) */
-async function moveFacility(id, fac) {
+async function moveFacility(id, fac) { if (roBlock()) return;
   const a = DB.applications.find(x => x.id === id); if (!a) return;
   const old = a.facility || ''; if (old === fac) return;
   if (a.hasSignature) return UI.alert('이미 수령 서명을 받은 신청은 시설을 바꿀 수 없습니다.');
@@ -1593,7 +1602,7 @@ function renderAll() {
   if ($('#app-ver')) $('#app-ver').textContent = APP_VERSION;
   $('#kiosk-exit')?.classList.toggle('hidden', kioskOnly());
   const admin = isAdmin();
-  $('#role-badge').textContent = !adminsSet() ? '총괄관리자 미지정' : admin ? '총괄관리자' : kioskOnly() ? '태블릿 계정' : (visibleServices().length ? `담당: ${visibleServices().map(x => x.name).join(', ')}` : '배정 없음');
+  $('#role-badge').textContent = !adminsSet() ? '총괄관리자 미지정' : admin ? '총괄관리자' : kioskOnly() ? '태블릿 계정' : (visibleServices().length ? `담당: ${visibleServices().map(x => x.name + (isRO(x) ? '(열람)' : '')).join(', ')}` : '배정 없음');
   $$('[data-nav="config"]').forEach(b => b.classList.toggle('hidden', !admin));
   $('#btn-new-service').classList.toggle('hidden', !admin);
   const allVis = visibleServices(), nEnded = allVis.filter(x => x.ended).length;
@@ -1611,6 +1620,7 @@ function renderAll() {
     return;
   }
   $('#view-noaccess').classList.add('hidden');
+  { const RO = isRO(s); document.body.classList.toggle('qf-ro', RO); $$('[data-nav="kiosk"]').forEach(b => b.classList.toggle('hidden', RO)); if (RO && VIEW.tab === 'kiosk') return switchTab('admin'); }
   $('#kiosk-locked-name').textContent = `${s.name} · ${r.name}`;
   if (VIEW.tab === 'admin') renderAdmin(s, r);
   if (VIEW.tab === 'kiosk') renderKioskResults();
@@ -1676,6 +1686,8 @@ function renderAdmin(s, r) {
   let bl = $('#btn-blocklist');
   if (!bl && fsel) { fsel.insertAdjacentHTML('afterend', '<button id="btn-blocklist" class="qf-btn bg-white border border-slate-300 hover:bg-slate-50 whitespace-nowrap" title="구입 제한 명단"><i class="fa-solid fa-ban text-rose-600"></i> 구입 제한 <b data-n></b></button>'); bl = $('#btn-blocklist'); }
   if (bl) { bl.onclick = () => openBlockList(); bl.querySelector('[data-n]').textContent = (DB.config.blocked || []).length || ''; }
+  { let dl = $('#btn-dellog'); if (!dl && bl) { bl.insertAdjacentHTML('afterend', '<button id="btn-dellog" class="qf-btn bg-white border border-slate-300 hover:bg-slate-50 whitespace-nowrap" title="삭제 기록"><i class="fa-solid fa-clock-rotate-left"></i> 삭제 기록 <b data-n></b></button>'); dl = $('#btn-dellog'); }
+    if (dl) { const n = (DB.deleteLog || []).filter(x => x.sid === s.id).length; dl.classList.toggle('hidden', !n); dl.querySelector('[data-n]').textContent = n || ''; dl.onclick = () => openDeleteLog(s); } }
   const q = norm($('#admin-search-input').value), qd = q.replace(/\D/g, '');
   const f = $('#admin-filter-status').value, ft = VIEW.utype || '';
   const rows = apps.filter(a => {
@@ -1732,7 +1744,7 @@ function renderAdmin(s, r) {
 /** 주소 가리기: 시·구까지만 */
 function maskAddr(a) { const t = String(a || '').split(/\s+/); return t.length > 2 ? `${t.slice(0, 2).join(' ')} ○○○` : (a ? '○○○' : ''); }
 /** 재원 한꺼번에 지정: 지금 목록(검색·필터 결과) 중 미지정 건 또는 전체 */
-async function openFundBulk(ids) {
+async function openFundBulk(ids) { if (roBlock()) return;
   const s = curSvc(), list = DB.applications.filter(a => ids.includes(a.id) && !a.isPurged), none = list.filter(a => !a.fund);
   if (!list.length) return UI.toast('목록에 신청이 없습니다.', 'info');
   await UI.dialog({
@@ -1748,10 +1760,10 @@ async function openFundBulk(ids) {
     }
   });
 }
-async function setFund(id, v) {
+async function setFund(id, v) { if (roBlock()) return;
   await wrap(() => mutateMain(d => { const a = d.applications.find(x => x.id === id); if (!a || (a.fund || '') === v) return false; a.fund = v; a.fundBy = Auth.email; a.fundAt = ymdhm(); }));
 }
-async function toggleDeposit(id) {
+async function toggleDeposit(id) { if (roBlock()) return;
   const a0 = DB.applications.find(x => x.id === id); if (!a0) return;
   if (a0.isDeposited) {
     if (a0.isReceived) return UI.alert('이미 수령한 신청은 입금 확인을 취소할 수 없습니다.');
@@ -1935,7 +1947,7 @@ async function openDepositMatch() {
     }
   });
 }
-async function undoReceive(id) {
+async function undoReceive(id) { if (roBlock()) return;
   if (!await UI.confirm('수령 처리를 취소할까요?\n저장된 서명 이미지도 삭제됩니다.', { danger: true, okText: '수령 취소' })) return;
   await wrap(async () => {
     const a = DB.applications.find(x => x.id === id);
@@ -1944,7 +1956,7 @@ async function undoReceive(id) {
   }, '처리 중…');
 }
 /** 신청 현황에서: 이 신청자를 구입 제한에 올리기 / 풀기 */
-async function toggleBlock(id) {
+async function toggleBlock(id) { if (roBlock()) return;
   const a = DB.applications.find(x => x.id === id), p = a && piiOf(a); if (!p) return UI.alert('신청자 정보를 읽을 수 없습니다.');
   const bk = blockedOf(p);
   if (bk) { if (!await UI.confirm(`${esc(maskName(p.name))} 님의 구입 제한을 풀까요?\n(사유: ${esc(bk.reason || '-')})`, { okText: '제한 풀기' })) return; return wrap(() => mutateMain(d => { d.config.blocked = (d.config.blocked || []).filter(b => b.h !== bk.h); return true; })); }
@@ -1972,10 +1984,22 @@ async function openBlockList() {
     async collect() { return true; }
   });
 }
-async function deleteApp(id) {
+function openDeleteLog(s) {
+  const L = (DB.deleteLog || []).filter(x => x.sid === s.id).slice().reverse(), rn = rid => s.rounds.find(r => r.id === rid)?.name || rid;
+  const SRC = { web: '휴대폰', kiosk: '태블릿', forms: 'Forms', manual: '직원 입력' };
+  UI.dialog({ title: `삭제 기록 — ${esc(s.name)}`, wide: true, cancelText: '', html: `<p class="text-[11px] text-slate-500 mb-2">신청자가 직접 낸 신청을 지운 기록입니다. 개인정보는 남기지 않습니다.</p><div class="overflow-y-auto" style="max-height:60vh"><table class="w-full text-xs"><thead><tr class="text-left text-slate-500 border-b"><th class="p-1.5">삭제 시각</th><th class="p-1.5">삭제한 사람</th><th class="p-1.5">회차</th><th class="p-1.5">경로·구분</th><th class="p-1.5 text-right">수량</th><th class="p-1.5">사유</th></tr></thead><tbody>${L.map(x => `<tr class="border-b border-slate-100"><td class="p-1.5 whitespace-nowrap">${esc(x.at)}</td><td class="p-1.5">${esc(x.by)}</td><td class="p-1.5">${esc(rn(x.rid))}</td><td class="p-1.5">${esc(SRC[x.src] || x.src)} · ${esc(x.type || '-')}</td><td class="p-1.5 text-right">${x.qty}</td><td class="p-1.5">${esc(x.why)}</td></tr>`).join('')}</tbody></table></div>` });
+}
+async function deleteApp(id) { if (roBlock()) return;
   const a = DB.applications.find(x => x.id === id); if (!a) return;
-  const p = piiOf(a);
-  if (!await UI.confirm(`${esc(p ? p.name : a.id)} 님의 신청을 삭제할까요?\n개인정보·서명도 함께 삭제되며 통계에서도 빠집니다.\n(Forms에서 다시 가져와도 중복으로 보아 건너뜁니다.)`, { danger: true, okText: '삭제' })) return;
+  const p = piiOf(a), ext = a.source === 'web' || a.source === 'kiosk' || String(a.sourceKey || '').startsWith('web:');
+  let why = '';
+  if (ext) {   // 신청자가 직접 낸 신청: 사유를 남기고 지움 (누가·언제·왜 — 개인정보는 남기지 않음)
+    const R = ['중복 신청', '본인 취소 요청', '잘못된 신청'];
+    why = await UI.dialog({ title: '신청 삭제', danger: true, okText: '삭제',
+      html: `<div class="space-y-3 text-xs"><p class="leading-relaxed">${esc(p ? p.name : a.id)} 님이 직접 낸 신청입니다. 삭제 사유를 고르세요.<br><span class="text-slate-500">개인정보·서명은 지워지고, 사유·삭제한 사람·시각은 [삭제 기록]에 남습니다.</span></p>${chipGroup('del-why', [...R, '기타'], '')}<input data-why class="qf-in" placeholder="기타 사유"></div>`,
+      collect(b) { const v = b.querySelector('input[name="del-why"]:checked')?.value; const t = b.querySelector('[data-why]').value.trim(); if (!v) throw new Error('사유를 고르세요.'); if (v === '기타' && !t) throw new Error('기타 사유를 적어 주세요.'); return v === '기타' ? t : v + (t ? ` (${t})` : ''); } });
+    if (!why) return;
+  } else if (!await UI.confirm(`${esc(p ? p.name : a.id)} 님의 신청을 삭제할까요?\n개인정보·서명도 함께 삭제되며 통계에서도 빠집니다.\n(Forms에서 다시 가져와도 중복으로 보아 건너뜁니다.)`, { danger: true, okText: '삭제' })) return;
   await wrap(async () => {
     if (a.hasSignature) await Store.hardDelete(sigRel(id));
     await mutatePii(a.roundId, d => { if (!d.entries[id]) return false; delete d.entries[id]; }, a.facility || '');
@@ -1983,12 +2007,13 @@ async function deleteApp(id) {
       const i = d.applications.findIndex(x => x.id === id); if (i < 0) return false;
       const x = d.applications[i];
       if (x.sourceKey) { d.deletedKeys ||= []; d.deletedKeys.push(x.sourceKey); }
+      if (why) { d.deleteLog ||= []; d.deleteLog.push({ at: ymdhm(), by: Auth.email || '', sid: x.serviceId, rid: x.roundId, src: x.source || '', type: x.userType || '', qty: qtySum(x), amt: x.totalAmount || 0, sub: x.submittedAt || x.createdAt || '', why }); if (d.deleteLog.length > 1000) d.deleteLog.splice(0, d.deleteLog.length - 1000); }
       d.applications.splice(i, 1);
     });
     UI.toast('삭제했습니다.');
   }, '삭제 중…');
 }
-function goKiosk(id) { switchTab('kiosk'); selectKioskApplicant(id); }
+function goKiosk(id) { if (roBlock()) return; switchTab('kiosk'); selectKioskApplicant(id); }
 
 /* ---------- 태블릿 호출: PC에서 [태블릿]을 누르면 현장 태블릿에 그 사람 서명 화면이 바로 뜬다 ----------
    서비스 폴더의 call.json 한 파일로 주고받음 (태블릿이 3초마다 확인. 별도 서버·인트라넷 불필요) */
@@ -3479,7 +3504,7 @@ async function purgeExpiredManual() {
   const rep = await wrap(() => runPurge(list), '개인정보 파기 중…');
   if (rep) await UI.alert(purgeReportHtml(rep), '파기 완료');
 }
-async function purgeRoundNow(rid) {
+async function purgeRoundNow(rid) { if (roBlock()) return;
   const s = DB.services.find(x => x.rounds.some(r => r.id === rid)), r = findRound(DB, rid);
   if (!s || !r || r.piiPurgedAt) return;
   const notRec = roundApps(r).filter(a => !a.isReceived).length;
@@ -4142,7 +4167,7 @@ function renderConfig() {
         <span class="font-bold text-sm ${s.ended ? 'text-slate-400' : 'text-slate-900'}">${s.ended ? '<span class="text-[11px] px-1.5 py-0.5 rounded bg-slate-200 text-slate-600 mr-1">종료</span>' : ''}${esc(s.name)} <span class="text-xs font-normal text-slate-500">(${esc([s.facility, s.category].filter(Boolean).join(' · '))})</span></span>
         <span class="flex gap-3"><button onclick="openServiceEditor('${esc(s.id)}')" class="text-ewelfare-700 hover:underline font-semibold">편집</button><button onclick="openFormPreview(findSvc(DB,'${esc(s.id)}'), findSvc(DB,'${esc(s.id)}').rounds.find(r => r.id === findSvc(DB,'${esc(s.id)}').currentRoundId))" class="text-ewelfare-700 hover:underline font-semibold">신청서 미리보기</button><button onclick="openFolderAccess('${esc(s.id)}')" class="text-ewelfare-700 hover:underline font-semibold">폴더 권한</button><button onclick="toggleEnded('${esc(s.id)}')" class="text-slate-600 hover:underline">${s.ended ? '다시 사용' : '종료'}</button><button onclick="deleteService('${esc(s.id)}')" class="text-rose-600 hover:underline">삭제</button></span>
       </div>
-      <p class="${lcList(s.managers).length ? 'text-slate-700' : 'text-amber-700'}"><i class="fa-solid fa-user-tie"></i> 담당자: ${lcList(s.managers).length ? lcList(s.managers).map(esc).join(', ') : '미지정 (총괄관리자만 볼 수 있음)'}</p>
+      <p class="${lcList(s.managers).length ? 'text-slate-700' : 'text-amber-700'}"><i class="fa-solid fa-user-tie"></i> 담당자: ${lcList(s.managers).length ? lcList(s.managers).map(esc).join(', ') : '미지정 (총괄관리자만 볼 수 있음)'}</p>${svcViewers(s).length ? `<p class="text-slate-600"><i class="fa-solid fa-eye"></i> 열람 전용: ${svcViewers(s).map(esc).join(', ')}</p>` : ''}
       <p class="text-slate-600">${esc(s.desc || '')}</p>
       <p class="text-slate-500">현재 회차 <b>${esc(cr?.name || '-')}</b> · 마감 ${esc(cr?.deadline || '-')} · 누적 신청 ${n}건 · 품목 ${s.items.map(i => esc(i.name)).join(', ')}</p>
       <p class="text-slate-500"><i class="fa-solid fa-sliders"></i> ${esc({ auto: '자동 반복', manual: '정기', once: '1회성' }[svcMode(s)])} · ${payMode(s) === 'deposit' ? '신청자 입금' : '기관 지급(입금 없음)'} · 연락처 ${({ req: '필수', opt: '선택', off: '안 받음' })[phoneMode(s)]} · 주소 ${({ req: '필수', opt: '선택', off: '안 받음' })[addrMode(s)]}${useFund(s) ? ' · 재원 지정' : ''} · 추가 질문 ${(s.fields || []).filter(f => f.label).length}개${s.formsUrl ? ` · <button onclick="openFormsGuide('${esc(s.id)}')" class="text-ewelfare-700 hover:underline">Forms 안내</button>` : ''}</p>
@@ -4318,8 +4343,8 @@ async function makeMeAdmin() {
 /** SharePoint 폴더 권한을 지정된 사람에 맞춤: 빠진 사람은 편집 권한 부여, 지정에서 빠진 개인 권한은 회수 (그룹·상속 권한은 건드리지 않음) */
 function folderTargets(s) {
   const svcWant = [...svcManagers(s), ...svcKiosk(s)];
-  return [{ rel: svcDir(s.id), label: '서비스 폴더', want: svcWant },
-    ...svcFacs(s).map(f => ({ rel: facDir(s.id, f), label: f, want: [...lcList(s.managers), ...facStaff(s, f, 'managers'), ...facStaff(s, f, 'kiosk')] }))];
+  return [{ rel: svcDir(s.id), label: '서비스 폴더', want: svcWant, read: svcViewers(s) },
+    ...svcFacs(s).map(f => ({ rel: facDir(s.id, f), label: f, want: [...lcList(s.managers), ...facStaff(s, f, 'managers'), ...facStaff(s, f, 'kiosk')], read: svcViewers(s) }))];
 }
 async function syncFolderPerms(s) { return syncTargets(folderTargets(s), `${s.name}`); }
 async function syncTargets(targets, what) {
@@ -4332,15 +4357,22 @@ async function syncTargets(targets, what) {
     const mailOf = p => (p.grantedToV2?.user?.email || p.grantedToV2?.siteUser?.loginName?.split('|').pop() || p.grantedTo?.user?.email || '').toLowerCase();
     const want = [...new Set(t.want)], have = new Set(perms.filter(p => (p.roles || []).some(r => /write|owner/.test(r))).map(mailOf).filter(Boolean));
     const add = want.filter(e => !have.has(e));
+    // 열람 전용: 읽기 권한만. 예전에 편집 권한이 있었으면 회수하고 읽기로 다시 줌
+    const read = [...new Set(t.read || [])].filter(e => !want.includes(e) && !keep.has(e));
+    const down = perms.filter(p => !p.inheritedFrom && read.includes(mailOf(p)) && (p.roles || []).some(r => /write|owner/.test(r)));
+    for (const p of down) { const r = await gx(`${base}/items/${m.id}/permissions/${p.id}`, { method: 'DELETE' }); if (!r.ok && r.status !== 404) throw new Error(`${t.label}: 편집 권한 회수 실패 (HTTP ${r.status})`); }
+    const haveR = new Set(perms.filter(p => !down.includes(p) && (p.roles || []).length).map(mailOf).filter(Boolean));
+    const addR = read.filter(e => !haveR.has(e));
+    if (addR.length) { const r = await gx(`${base}/items/${m.id}/invite`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ requireSignIn: true, sendInvitation: false, roles: ['read'], recipients: addR.map(email => ({ email })) }) }); if (!r.ok) throw new Error(`${t.label}: 읽기 권한 부여 실패 (HTTP ${r.status}) ${(await r.text()).slice(0, 120)}`); }
     if (add.length) { const r = await gx(`${base}/items/${m.id}/invite`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ requireSignIn: true, sendInvitation: false, roles: ['write'], recipients: add.map(email => ({ email })) }) }); if (!r.ok) throw new Error(`${t.label}: 권한 부여 실패 (HTTP ${r.status}) ${(await r.text()).slice(0, 120)}`); }
     // 회수 대상: 이 폴더에 직접 준 '개인 계정'의 편집·읽기 권한만. 그룹·소유자(owner)·상속 권한은 절대 건드리지 않음
-    const extra = perms.filter(p => !p.inheritedFrom && (p.grantedToV2?.user || p.grantedTo?.user) && EMAIL_RE.test(mailOf(p)) && !(p.roles || []).includes('owner') && !want.includes(mailOf(p)) && !keep.has(mailOf(p)));
+    const extra = perms.filter(p => !p.inheritedFrom && (p.grantedToV2?.user || p.grantedTo?.user) && EMAIL_RE.test(mailOf(p)) && !(p.roles || []).includes('owner') && !want.includes(mailOf(p)) && !read.includes(mailOf(p)) && !down.includes(p) && !keep.has(mailOf(p)));
     for (const p of extra) { const r = await gx(`${base}/items/${m.id}/permissions/${p.id}`, { method: 'DELETE' }); if (!r.ok && r.status !== 404) throw new Error(`${t.label}: 권한 회수 실패 (HTTP ${r.status})`); }
     // secure 폴더만: 사이트 '구성원·방문자' 같은 넓은 그룹도 회수 (토큰 폴더라 직원 전체가 볼 이유가 없음. 소유자 그룹은 둠)
     const broad = t.dropBroad ? perms.filter(p => !p.inheritedFrom && !(p.roles || []).includes('owner') && !p.link && BROAD_RE.test(permWho(p))) : [];
     for (const p of broad) { const r = await gx(`${base}/items/${m.id}/permissions/${p.id}`, { method: 'DELETE' }); if (!r.ok && r.status !== 404) throw new Error(`${t.label}: 그룹 권한 회수 실패 (HTTP ${r.status})`); }
     if (t.dropBroad) SECURE_LOCK = null, _secChk = 0;
-    rep.push({ label: t.label, added: add, removed: [...extra.map(mailOf), ...broad.map(permWho)] });
+    rep.push({ label: t.label, added: [...add, ...addR.map(e => e + '(읽기)')], removed: [...extra.map(mailOf), ...broad.map(permWho)] });
   }
   return rep;
 }
@@ -4515,7 +4547,7 @@ async function openServiceEditor(id) {
   if (isNew && !admin) return UI.alert('새 서비스는 총괄관리자만 만들 수 있습니다.');
   if (!isNew && !canService(findSvc(DB, id))) return UI.alert('이 서비스를 편집할 권한이 없습니다.');
   const s0 = isNew ? { ...blankService(), kioskUsers: lcList(DB.config.defaultKiosk) } : JSON.parse(JSON.stringify(findSvc(DB, id)));
-  const permKey = x => JSON.stringify([lcList(x.managers), lcList(x.kioskUsers), x.facilityStaff || {}, !!x.split, !!x.splitAll, x.splitFacilities || []]), permBefore = permKey(s0);
+  const permKey = x => JSON.stringify([lcList(x.managers), lcList(x.viewers), lcList(x.kioskUsers), x.facilityStaff || {}, !!x.split, !!x.splitAll, x.splitFacilities || []]), permBefore = permKey(s0);
   const cr = s0.rounds.find(r => r.id === s0.currentRoundId) || s0.rounds[s0.rounds.length - 1];
   const fieldRow = f => `<tr data-field="${esc(f.id)}" class="align-top">
     <td class="pr-1 py-0.5"><input data-fl="label" value="${esc(f.label || '')}" class="qf-in" placeholder="질문 제목 (예: 희망 수령 방법)"></td>
@@ -4535,6 +4567,7 @@ async function openServiceEditor(id) {
       <label>시설${H('서비스가 속한 시설. 목록은 [설정 → 목록 관리]에서 바꿉니다. 서비스 선택 목록과 통계가 시설별로 묶입니다.')}<select data-s="facility" class="qf-in mt-1"><option value="">(구분 없음)</option>${(DB.config.facilities || []).map(c => `<option ${c === s0.facility ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select></label>
       <div class="md:col-span-2">태블릿 계정${H('이 서비스의 현장 태블릿(신청·수령 서명) 화면만 쓸 수 있는 계정입니다. 신청 현황·통계·결재 문서·편집은 볼 수 없습니다. SharePoint 서비스 폴더에도 편집 권한이 있어야 합니다([폴더 권한]에서 확인).')}<textarea data-s="kioskUsers" rows="1" class="qf-in mt-1 font-mono" ${admin ? '' : 'readonly'} placeholder="이메일, 쉼표로 구분">${esc(lcList(s0.kioskUsers).join(', '))}</textarea></div>
       <div class="md:col-span-2">담당자${H('담당자는 이 서비스의 신청 현황·서명·명부만 봅니다. 실제 차단은 SharePoint 폴더 권한으로 합니다(서비스 목록 → [폴더 권한]). 총괄관리자만 바꿀 수 있습니다.')}<textarea data-s="managers" rows="1" class="qf-in mt-1 font-mono" ${admin ? '' : 'readonly'} placeholder="이메일, 쉼표로 구분">${esc(lcList(s0.managers).join(', '))}</textarea></div>
+      <div class="md:col-span-2">열람 전용${H('신청 현황·결재 문서·통계를 보고 엑셀로 내려받기만 합니다. 입금·수령 처리, 삭제, 양식 편집은 할 수 없습니다. 서비스 폴더에는 읽기 권한만 자동으로 줍니다. 총괄관리자만 바꿀 수 있습니다.')}<textarea data-s="viewers" rows="1" class="qf-in mt-1 font-mono" ${admin ? '' : 'readonly'} placeholder="이메일, 쉼표로 구분">${esc(lcList(s0.viewers).join(', '))}</textarea></div>
     </div>`)}
     ${SEC('시설별 관리', '하나의 양식을 여러 산하시설이 함께 쓰면서, 신청자를 시설별로 나눠 관리합니다. 시설 담당자·태블릿 계정([설정 → 시설])은 자기 시설 신청자만 보고, 개인정보도 시설별 폴더에 따로 저장됩니다. 서비스 담당자는 모든 시설을 봅니다.', `
       <label class="flex items-center gap-2"><input type="checkbox" data-s="split" ${s0.split ? 'checked' : ''}> 시설별로 나눠 관리 (함께 쓰기)</label>
@@ -4633,6 +4666,8 @@ async function openServiceEditor(id) {
       const managers = lcList(g('managers').value);
       const badM = managers.filter(x => !EMAIL_RE.test(x));
       if (admin && badM.length) throw new Error(`담당자 이메일 형식이 아닙니다: ${badM.join(', ')}`);
+      const viewers = lcList(g('viewers').value).filter(x => !managers.includes(x)), badV = viewers.filter(x => !EMAIL_RE.test(x));
+      if (admin && badV.length) throw new Error(`열람 전용 이메일 형식이 아닙니다: ${badV.join(', ')}`);
       const kioskUsers = lcList(g('kioskUsers').value), badK = kioskUsers.filter(x => !EMAIL_RE.test(x));
       const isSplit = g('split').checked, splitAll = g('splitAll').checked, splitFacilities = isSplit && !splitAll ? readChips(b, 'splitFacilities') : [];
       if (isSplit && (splitAll ? (DB.config.facilities || []).length : splitFacilities.length) < 2) throw new Error('시설별 관리: 시설이 2개 이상 있어야 합니다.');
@@ -4654,7 +4689,7 @@ async function openServiceEditor(id) {
         notice: g('notice').value.replace(/\r/g, '').trim(), pickupDays: readChips(b, 'pickupDays'), pickupHours: g('pickupHours').value.trim(), pickupPlace: g('pickupPlace').value.trim(),
         userTypes: readChips(b, 'userTypes'), useGuardian: g('useGuardian').checked,
         payMode: g('payMode').value, phoneMode: g('phoneMode').value, addrMode: g('addrMode').value, useFund: g('useFund').checked, funds: readChips(b, 'funds'), qtyMode: g('qtyMode').value, isGrid: g('qtyMode').value !== 'total', closedMsg: g('closedMsg').value.trim(), hideDlTime: g('hideDlTime').checked, formal: g('formal').checked, qtyLabel: g('qtyLabel').value.trim().slice(0, 30), unit: g('unit').value.trim().slice(0, 5), qtyPos: g('qtyPos').value, qtyFirst: undefined,
-        ...(admin ? { managers, kioskUsers, facilityStaff } : {}),
+        ...(admin ? { managers, kioskUsers, facilityStaff, viewers } : {}),
         days: g('qtyMode').value !== 'total' ? readChips(b, 'days') : [], items, reportTitle: g('reportTitle').value.trim(), reportFooter: g('reportFooter').value.trim()
       };
       return { patch, ro };
@@ -4683,7 +4718,7 @@ async function openServiceEditor(id) {
       const sp = b.querySelector('[data-s="split"]'); sp.onchange = () => { b.querySelector('[data-splitbox]').classList.toggle('hidden', !sp.checked); b.querySelector('[data-s="facility"]').disabled = sp.checked; };
       b.querySelector('[data-s="facility"]').disabled = sp.checked;
       const sa = b.querySelector('[data-s="splitAll"]'); sa.onchange = () => b.querySelector('[data-splitpick]').classList.toggle('hidden', sa.checked);
-      mountPeople(b.querySelector('[data-s="managers"]')); mountPeople(b.querySelector('[data-s="kioskUsers"]'));
+      mountPeople(b.querySelector('[data-s="managers"]')); mountPeople(b.querySelector('[data-s="kioskUsers"]')); mountPeople(b.querySelector('[data-s="viewers"]'));
       const modeSel = b.querySelector('[data-mode]');
       const pm = b.querySelector('[data-s="payMode"]'); pm.addEventListener('change', () => { const x = b.querySelector('[data-pricevis]'), none = pm.value === 'none'; x.textContent = none ? '직원만 봄' : '신청자에게 보임'; x.className = `ml-1 px-1.5 py-0.5 rounded font-normal ${none ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`; });
       const ob = b.querySelector('[data-s="ownBank"]'); ob.onchange = () => b.querySelector('[data-ownbank]').classList.toggle('hidden', !ob.checked);
@@ -4818,6 +4853,7 @@ function wire() {
   $('#btn-save-admins').onclick = saveAdmins;
   $('#btn-forms-guide').onclick = () => openFormsGuide();
   $('#btn-edit-svc').onclick = () => openServiceEditor(curSvc()?.id);
+  ['btn-import', 'btn-depmatch', 'btn-manual', 'btn-orgqty', 'btn-hold', 'btn-unarchive', 'btn-lock-fix', 'btn-newround', 'btn-event', 'btn-edit-svc'].forEach(id => { const b = document.getElementById(id); const f = b?.onclick; if (f) b.onclick = e => roBlock() ? null : f.call(b, e); });
   $('#btn-probe').onclick = probe;
   $('#btn-copy-deploy').onclick = () => copyText(Infra.deployLink());
   $('#btn-copy-kiosk').onclick = () => copyText(Infra.deployLink('&mode=kiosk'));
