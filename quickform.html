@@ -453,7 +453,7 @@ const APP_NAME = 'QuickForm';
 /** SharePoint 문서 라이브러리 안의 저장 폴더 기본값. 기관마다 배포 링크에 &folder=경로 로 바꿀 수 있음 */
 const DATA_FOLDER = 'QuickFormData';
 const LEGACY_FOLDERS = ['EWelfareData/QuickForm'];   // 예전 기본값 — 이미 쓰던 기관은 자동으로 이어서 씀
-const APP_VERSION = 'QF-5.10.2 · 11-05 10:00';
+const APP_VERSION = 'QF-5.10.3 · 11-05 10:30';
 const GRAPH = 'https://graph.microsoft.com/v1.0';
 /** 권한 범위: 기본 Sites.ReadWrite.All, 배포 링크에 &perm=selected 면 Sites.Selected(지정한 사이트만) */
 const scopeStr = () => `openid profile email offline_access https://graph.microsoft.com/${Infra.cfg.permSelected ? 'Sites.Selected' : 'Sites.ReadWrite.All'}`;
@@ -1673,7 +1673,7 @@ function renderAdmin(s, r) {
       + (FUND ? `<div class="col-span-full text-[11px] text-slate-600 -mt-2">${fundOpts(s).concat(['']).map(f => { const xs = apps.filter(a => (a.fund || '') === f); return xs.length ? `<span class="inline-block mr-3"><b>${esc(f || '재원 미지정')}</b> ${xs.length}건 · ${won(xs.reduce((x, a) => x + (a.totalAmount || 0), 0))}원</span>` : ''; }).join('')}</div>` : '');
   // 선택형 질문(복수 선택·하나 고르기·체크)의 보기별 인원: 예) 참석 행사 — 기념식 52명 · 현장연구발표회 49명
   { const ppl = (s.unit || '') === '명', FL = (s.fields || []).filter(f => !f.staff && ['multi', 'choice', 'check'].includes(f.type));
-    const html = FL.map(f => { const cnt = (f.type === 'check' ? ['예'] : f.opts || []).map(o => { let n = 0, q = 0; apps.forEach(a => { const v = piiOf(a)?.ext?.[f.id]; if (Array.isArray(v) ? v.includes(o) : v === o) { n++; q += qtySum(a); } }); return n ? `<span class="inline-block mr-3 whitespace-nowrap"><b class="text-slate-800">${esc(f.type === 'check' ? f.label : o)}</b> ${ppl ? `<b class="text-ewelfare-700">${q}명</b> <span class="text-slate-400">(${n}건)</span>` : `${n}건`}</span>` : ''; }).join(''); return cnt ? `<div>${f.type === 'check' ? '' : `<span class="text-slate-500 mr-2">${esc(f.label.replace(/\s*\*.*$/, ''))}</span>`}${cnt}</div>` : ''; }).join('');
+    const html = FL.map(f => { const cnt = (f.type === 'check' ? ['예'] : f.opts || []).map(o => { let n = 0, q = 0; apps.forEach(a => { const v = piiOf(a)?.ext?.[f.id]; if (Array.isArray(v) ? v.includes(o) : v === o) { n++; q += qtySum(a); } }); return n ? `<span class="inline-block mr-3 whitespace-nowrap"><b class="text-slate-800">${esc(f.type === 'check' ? f.label : o)}</b> ${ppl && f.type !== 'check' ? `<b class="text-ewelfare-700">${q}명</b> <span class="text-slate-400">(${n}건)</span>` : `${n}건`}</span>` : ''; }).join(''); return cnt ? `<div>${f.type === 'check' ? '' : `<span class="text-slate-500 mr-2">${esc(f.label.replace(/\s*\*.*$/, ''))}</span>`}${cnt}</div>` : ''; }).join('');
     if (html) $('#stats-cards-container').insertAdjacentHTML('beforeend', `<div class="col-span-full text-xs -mt-2 space-y-0.5">${html}</div>`); }
   const TH = (t, c = '') => `<th class="p-3 whitespace-nowrap ${c}">${t}</th>`;
   $('#admin-thead').innerHTML = `<tr>${TH('No', 'w-10 text-center')}${TH('신청자')}${FACS.length ? TH('시설') : ''}${TH('구분')}${TH('프로그램 / 보호자')}${TH('신청 항목·수량')}${TH('금액', 'text-right')}${FUND ? TH('지출 재원', 'text-center') : ''}${DEP ? TH('입금자명', 'text-center') + TH('입금 확인', 'text-center') : ''}${TH('수령', 'text-center')}${TH('관리', 'text-center')}</tr>`;
