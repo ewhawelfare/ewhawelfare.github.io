@@ -453,7 +453,7 @@ const APP_NAME = 'QuickForm';
 /** SharePoint 문서 라이브러리 안의 저장 폴더 기본값. 기관마다 배포 링크에 &folder=경로 로 바꿀 수 있음 */
 const DATA_FOLDER = 'QuickFormData';
 const LEGACY_FOLDERS = ['EWelfareData/QuickForm'];   // 예전 기본값 — 이미 쓰던 기관은 자동으로 이어서 씀
-const APP_VERSION = 'QF-5.10.4 · 11-11 10:00';
+const APP_VERSION = 'QF-5.10.5 · 11-13 18:30';
 const GRAPH = 'https://graph.microsoft.com/v1.0';
 /** 권한 범위: 기본 Sites.ReadWrite.All, 배포 링크에 &perm=selected 면 Sites.Selected(지정한 사이트만) */
 const scopeStr = () => `openid profile email offline_access https://graph.microsoft.com/${Infra.cfg.permSelected ? 'Sites.Selected' : 'Sites.ReadWrite.All'}`;
@@ -2675,7 +2675,7 @@ const ApplyForm = {
     const lbl = (n, t, req = true) => `<p class="font-bold text-slate-800 text-[15px] mb-1.5"><span class="text-ewelfare-700">${n}</span> ${t}${req ? ' <span class="text-rose-500">*</span>' : ''}</p>`;
     const inCls = 'w-full border border-slate-300 rounded-lg px-3 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-ewelfare-600 bg-white';
     const PL = s.programLimits || {}, limAll = [Number(s.maxPerDay) || 0, ...Object.values(PL).map(Number)];
-    const perDay = qm !== 'total' ? Math.max(...limAll) : 0, cap = Math.min(20, (perDay && !limAll.includes(0) ? perDay : 0) || max || 10);
+    const perDay = qm !== 'total' ? Math.max(...limAll) : 0, cap = Math.min(30, (perDay && !limAll.includes(0) ? perDay : 0) || max || 30);
     const limNow = () => { if (qm === 'total') return 0; const ut = el.querySelector('input[name="ap-utype"]:checked')?.value || '', t = Number((s.typeRules || {})[ut]?.perDay); if (t > 0) return t; const x = Number(PL[el.querySelector('[data-f="program"]')?.value || '']); return x > 0 ? x : (Number(s.maxPerDay) || 0); };
     // 수량은 목록에서 고르기 (숫자 입력 없음)
     const qtyIn = (id, day) => `<select data-q="${esc(id)}" ${day ? `data-d="${esc(day)}"` : ''} class="qf-qty w-full min-w-0 text-center border border-slate-300 rounded-md py-1.5 text-base bg-white">${Array.from({ length: cap + 1 }, (_, n) => `<option value="${n}">${n}</option>`).join('')}</select>`;
@@ -2783,7 +2783,7 @@ const ApplyForm = {
       const t = ev?.target?.dataset?.q ? ev.target : null;
       const lim = limNow();
       // 수량 목록을 지금 프로그램의 하루 한도까지만 보이게 (프로그램을 바꾸면 목록도 바뀜)
-      const top = Math.min(20, lim || max || 10);
+      const top = Math.min(30, lim || max || 30);
       el.querySelectorAll('select[data-q][data-d]').forEach(x => { if (x.options.length === top + 1) return; const v = Math.min(parseQty(x.value), top); x.innerHTML = Array.from({ length: top + 1 }, (_, n) => `<option value="${n}">${n}</option>`).join(''); x.value = String(v); });
       if (lim) {   // 날짜마다 하루 한도 (프로그램을 바꾸면 이미 고른 수량도 다시 맞춤)
         const byDay = {}; el.querySelectorAll('[data-q][data-d]').forEach(x => (byDay[x.dataset.d] ||= []).push(x));
