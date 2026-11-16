@@ -453,7 +453,7 @@ const APP_NAME = 'QuickForm';
 /** SharePoint 문서 라이브러리 안의 저장 폴더 기본값. 기관마다 배포 링크에 &folder=경로 로 바꿀 수 있음 */
 const DATA_FOLDER = 'QuickFormData';
 const LEGACY_FOLDERS = ['EWelfareData/QuickForm'];   // 예전 기본값 — 이미 쓰던 기관은 자동으로 이어서 씀
-const APP_VERSION = 'QF-5.10.5 · 11-13 18:30';
+const APP_VERSION = 'QF-5.10.6 · 11-16 11:00';
 const GRAPH = 'https://graph.microsoft.com/v1.0';
 /** 권한 범위: 기본 Sites.ReadWrite.All, 배포 링크에 &perm=selected 면 Sites.Selected(지정한 사이트만) */
 const scopeStr = () => `openid profile email offline_access https://graph.microsoft.com/${Infra.cfg.permSelected ? 'Sites.Selected' : 'Sites.ReadWrite.All'}`;
@@ -580,7 +580,7 @@ const Auth = {
   get authority() { return `https://login.microsoftonline.com/${Infra.cfg.tenantId}/oauth2/v2.0`; },
   get email() { return this.state.email || ''; },
   get who() { const s = this.state; return s.name ? `${s.name}` : (s.email || '직원'); },
-  async login() {
+  async login(silent = false) {
     const verifier = b64url(crypto.getRandomValues(new Uint8Array(32)));
     const challenge = b64url(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier)));
     const st = b64url(crypto.getRandomValues(new Uint8Array(12)));
@@ -591,8 +591,9 @@ const Auth = {
     const u = new URL(this.authority + '/authorize');
     u.search = new URLSearchParams({
       client_id: Infra.cfg.clientId, response_type: 'code', redirect_uri: this.redirectUri, response_mode: 'query',
-      scope: scopeStr(), code_challenge: challenge, code_challenge_method: 'S256', prompt: 'select_account', state: st
+      scope: scopeStr(), code_challenge: challenge, code_challenge_method: 'S256', prompt: silent ? 'none' : 'select_account', state: st, ...(this.email ? { login_hint: this.email } : {})
     }).toString();
+    if (silent) LS.set('qf:silent', String(Date.now()));
     location.assign(u.toString());
   },
   async handleRedirect() {
@@ -601,7 +602,7 @@ const Auth = {
     let rec = null; try { rec = st ? JSON.parse(LS.get('qf:pkce:' + st) || 'null') : null; } catch { }
     const sameTab = !!st && SS.get('qf:state') === st;
     const back = () => history.replaceState(null, '', location.pathname + ((sameTab ? SS.get('qf:return') : rec?.ret) || ''));
-    if (q.get('error')) { const d = q.get('error_description') || q.get('error'); back(); throw new Error('M365 로그인 실패: ' + d); }
+    if (q.get('error')) { const d = q.get('error_description') || q.get('error'); back(); if (/login_required|interaction_required|consent_required|account_selection_required/.test(q.get('error'))) throw new AuthError('M365 로그인이 필요합니다.'); throw new Error('M365 로그인 실패: ' + d); }
     const code = q.get('code');
     if (!code) return false;
     const verifier = sameTab ? SS.get('qf:pkce') : rec?.v;
@@ -645,12 +646,15 @@ const Auth = {
     if (!s.ref) throw new AuthError('M365 로그인이 필요합니다.');
     if (!this._refreshing) {
       this._refreshing = (async () => {
-        const r = await fetch(this.authority + '/token', {
-          method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: new URLSearchParams({ client_id: Infra.cfg.clientId, grant_type: 'refresh_token', refresh_token: s.ref, scope: scopeStr() })
-        });
+        let r; try {
+          r = await fetch(this.authority + '/token', {
+            method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams({ client_id: Infra.cfg.clientId, grant_type: 'refresh_token', refresh_token: s.ref, scope: scopeStr() })
+          });
+        } catch { throw new Error('M365에 연결하지 못했습니다. 잠시 후 자동으로 다시 시도합니다.'); }   // 일시 장애: 로그아웃하지 않음
         const j = await r.json().catch(() => ({}));
-        if (!r.ok) { this.save({}); throw new AuthError('M365 세션이 만료되었습니다. 다시 로그인하세요.'); }
+        if (r.status >= 500 || r.status === 429) throw new Error(`M365 응답 오류(${r.status}). 잠시 후 자동으로 다시 시도합니다.`);
+        if (!r.ok) { this.save({ email: s.email, name: s.name }); throw new AuthError('M365 세션이 만료되었습니다. 다시 로그인하세요.'); }
         this.store(j);
         return this.state.tok;
       })().finally(() => { this._refreshing = null; });
@@ -993,6 +997,17 @@ const canKiosk = (s, d = DB) => !!s && (canService(s, d) || svcKiosk(s, d).inclu
 const kioskOnly = (d = DB) => !!d && !isAdmin(d) && !d.services.some(s => canService(s, d)) && d.services.some(s => canKiosk(s, d));
 const visibleServices = () => DB.services.filter(s => MODE === 'kiosk' ? canKiosk(s) : canView(s));
 /** 시설 선택(신청 현황·결재 문서 공용): VIEW.fac = '' 전체, '__none' 미지정, 그 외 시설명 */
+/** 선택형 질문(예: 참석 행사)으로 명단 나눠 보기: VIEW.opt = { sid, fid, val } */
+const optField = s => (s?.fields || []).find(f => !f.staff && ['multi', 'choice'].includes(f.type));
+const optVals = (s, f, list) => [...new Set([...(f.opts || []), ...list.flatMap(a => { const v = piiOf(a)?.ext?.[f.id]; return Array.isArray(v) ? v : v ? [v] : []; })])];
+const optFilter = (s, list) => { const o = VIEW.opt, f = optField(s); if (!o || !f || o.sid !== s.id || o.fid !== f.id) return list; return list.filter(a => { const v = piiOf(a)?.ext?.[f.id]; return Array.isArray(v) ? v.includes(o.val) : v === o.val; }); };
+const optLabel = s => { const o = VIEW.opt, f = optField(s); return o && f && o.sid === s.id && o.fid === f.id ? ` (${o.val})` : ''; };
+function optSelectHtml(s, id, list) {
+  const f = optField(s); if (!f) return ''; const vals = optVals(s, f, list); if (vals.length < 2) return '';
+  const cur = VIEW.opt && VIEW.opt.sid === s.id && VIEW.opt.fid === f.id ? VIEW.opt.val : '';
+  return `<select id="${id}" class="qf-in !w-auto"><option value="">${esc(f.label.replace(/\s*\*.*$/, ''))} 전체</option>${vals.map(v => `<option ${v === cur ? 'selected' : ''}>${esc(v)}</option>`).join('')}</select>`;
+}
+function wireOptSelect(s, id) { const x = document.getElementById(id); if (!x) return; x.onchange = () => { const f = optField(s); VIEW.opt = x.value ? { sid: s.id, fid: f.id, val: x.value } : null; renderAll(); }; }
 const facFilter = (s, list) => !svcFacs(s).length || !VIEW.fac ? list : list.filter(a => VIEW.fac === '__none' ? !a.facility : a.facility === VIEW.fac);
 function facSelectHtml(s, id) {
   const facs = svcFacs(s); if (!facs.length) return '';
@@ -1373,6 +1388,8 @@ function showSetup() {
   };
 }
 function showLogin(msg = '') {
+  // 켜 둔 PC·태블릿: 세션이 끝나면 Microsoft 로그인이 살아 있는 한 버튼 없이 다시 로그인 (10분에 한 번만 시도)
+  if (!inIframe && Auth.email && Infra.ready() && Date.now() - Number(LS.get('qf:silent') || 0) > 600e3) { bootScreen('<p><i class="fa-solid fa-circle-notch spin mr-1"></i> M365에 다시 연결하는 중…</p>'); Auth.login(true); return; }
   const iframe = inIframe && !IN_TEAMS && !EMBED;
   const iframeNote = iframe ? `
       <div class="text-left text-xs bg-amber-50 border border-amber-200 rounded p-3 text-amber-900 leading-relaxed">
@@ -1663,7 +1680,7 @@ function renderAdmin(s, r) {
   $('#admin-denied').classList.toggle('hidden', !denied);
   if (denied) $('#admin-denied').innerHTML = `<b><i class="fa-solid fa-lock"></i> 이 서비스의 개인정보 폴더에 접근 권한이 없습니다.</b><br>SharePoint 폴더 <code>${esc(Infra.cfg.folder)}/${esc(svcDir(s.id))}</code>에 본인 계정 권한이 필요합니다. 총괄관리자에게 요청하세요. (통계·수량은 볼 수 있지만 성명·연락처·서명은 표시되지 않습니다.)`;
 
-  const apps = facFilter(s, roundApps(r));
+  const appsAll = facFilter(s, roundApps(r)), apps = optFilter(s, appsAll);
   const dep = apps.filter(a => a.isDeposited), rec = apps.filter(a => a.isReceived);
   const card = (label, val, unit, color) => `<div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm"><p class="text-xs text-slate-500 font-medium">${label}</p><p class="text-xl font-black ${color} mt-1">${val} <span class="text-xs font-normal">${unit}</span></p></div>`;
   const DEP = payMode(s) === 'deposit', FUND = useFund(s), ADDR = addrMode(s) !== 'off', FACS = svcFacs(s), FACALL = myFacs(s) === 'all';
@@ -1673,7 +1690,7 @@ function renderAdmin(s, r) {
       + (FUND ? `<div class="col-span-full text-[11px] text-slate-600 -mt-2">${fundOpts(s).concat(['']).map(f => { const xs = apps.filter(a => (a.fund || '') === f); return xs.length ? `<span class="inline-block mr-3"><b>${esc(f || '재원 미지정')}</b> ${xs.length}건 · ${won(xs.reduce((x, a) => x + (a.totalAmount || 0), 0))}원</span>` : ''; }).join('')}</div>` : '');
   // 선택형 질문(복수 선택·하나 고르기·체크)의 보기별 인원: 예) 참석 행사 — 기념식 52명 · 현장연구발표회 49명
   { const ppl = (s.unit || '') === '명', FL = (s.fields || []).filter(f => !f.staff && ['multi', 'choice', 'check'].includes(f.type));
-    const html = FL.map(f => { const seen = apps.flatMap(a => { const v = piiOf(a)?.ext?.[f.id]; return Array.isArray(v) ? v : v ? [v] : []; }), cnt = (f.type === 'check' ? ['예'] : [...new Set([...(f.opts || []), ...seen])]).map(o => { let n = 0, q = 0; apps.forEach(a => { const v = piiOf(a)?.ext?.[f.id]; if (Array.isArray(v) ? v.includes(o) : v === o) { n++; q += qtySum(a); } }); return n ? `<span class="inline-block mr-3 whitespace-nowrap"><b class="text-slate-800">${esc(f.type === 'check' ? f.label : o)}</b> ${ppl && f.type !== 'check' ? `<b class="text-ewelfare-700">${q}명</b> <span class="text-slate-400">(${n}건)</span>` : `${n}건`}</span>` : ''; }).join(''); return cnt ? `<div>${f.type === 'check' ? '' : `<span class="text-slate-500 mr-2">${esc(f.label.replace(/\s*\*.*$/, ''))}</span>`}${cnt}</div>` : ''; }).join('');
+    const html = FL.map(f => { const seen = appsAll.flatMap(a => { const v = piiOf(a)?.ext?.[f.id]; return Array.isArray(v) ? v : v ? [v] : []; }), cnt = (f.type === 'check' ? ['예'] : [...new Set([...(f.opts || []), ...seen])]).map(o => { let n = 0, q = 0; appsAll.forEach(a => { const v = piiOf(a)?.ext?.[f.id]; if (Array.isArray(v) ? v.includes(o) : v === o) { n++; q += qtySum(a); } }); return n ? `<span class="inline-block mr-3 whitespace-nowrap"><b class="text-slate-800">${esc(f.type === 'check' ? f.label : o)}</b> ${ppl && f.type !== 'check' ? `<b class="text-ewelfare-700">${q}명</b> <span class="text-slate-400">(${n}건)</span>` : `${n}건`}</span>` : ''; }).join(''); return cnt ? `<div>${f.type === 'check' ? '' : `<span class="text-slate-500 mr-2">${esc(f.label.replace(/\s*\*.*$/, ''))}</span>`}${cnt}</div>` : ''; }).join('');
     if (html) $('#stats-cards-container').insertAdjacentHTML('beforeend', `<div class="col-span-full text-xs -mt-2 space-y-0.5">${html}</div>`); }
   const TH = (t, c = '') => `<th class="p-3 whitespace-nowrap ${c}">${t}</th>`;
   $('#admin-thead').innerHTML = `<tr>${TH('No', 'w-10 text-center')}${TH('신청자')}${FACS.length ? TH('시설') : ''}${TH('구분')}${TH('프로그램 / 보호자')}${TH('신청 항목·수량')}${TH('금액', 'text-right')}${FUND ? TH('지출 재원', 'text-center') : ''}${DEP ? TH('입금자명', 'text-center') + TH('입금 확인', 'text-center') : ''}${TH('수령', 'text-center')}${TH('관리', 'text-center')}</tr>`;
@@ -1710,7 +1727,7 @@ function renderAdmin(s, r) {
       sum.querySelectorAll('[data-ut]').forEach(x => x.onclick = () => { VIEW.utype = VIEW.utype === x.dataset.ut ? '' : x.dataset.ut; renderAll(); }); } }
   let ffw = $('#admin-fac-wrap');
   if (!ffw && fsel) { fsel.insertAdjacentHTML('beforebegin', '<span id="admin-fac-wrap"></span>'); ffw = $('#admin-fac-wrap'); }
-  if (ffw) { ffw.innerHTML = facSelectHtml(s, 'admin-filter-fac'); const fx = $('#admin-filter-fac'); if (fx) fx.onchange = () => { VIEW.fac = fx.value; renderAll(); }; }
+  if (ffw) { ffw.innerHTML = facSelectHtml(s, 'admin-filter-fac') + optSelectHtml(s, 'admin-filter-opt', appsAll); wireOptSelect(s, 'admin-filter-opt'); const fx = $('#admin-filter-fac'); if (fx) fx.onchange = () => { VIEW.fac = fx.value; renderAll(); }; }
   let fb = $('#btn-fund-bulk');
   if (!fb && fsel) { fsel.insertAdjacentHTML('afterend', '<button id="btn-fund-bulk" class="qf-btn bg-white border border-slate-300 hover:bg-slate-50 whitespace-nowrap"><i class="fa-solid fa-coins"></i> 재원 지정</button>'); fb = $('#btn-fund-bulk'); }
   if (fb) { fb.classList.toggle('hidden', !FUND); fb.onclick = () => openFundBulk(rows.map(a => a.id)); }
@@ -3916,8 +3933,8 @@ async function loadSigUrls(sid, force = false) {
 let _sigLoading = false;
 function renderReport(s, r) {
   const DOC = VIEW.doc === 'receipt' ? 'receipt' : 'apply';
-  const apps = facFilter(s, roundApps(r)), inst = DB.config.institutionName || '', facLabel = svcFacs(s).length && VIEW.fac ? ` (${VIEW.fac === '__none' ? '시설 미지정' : VIEW.fac})` : '';
-  const fw = $('#rep-fac-wrap'); if (fw) { fw.innerHTML = facSelectHtml(s, 'rep-fac'); const fx = $('#rep-fac'); if (fx) fx.onchange = () => { VIEW.fac = fx.value; renderAll(); }; }
+  const appsAll = facFilter(s, roundApps(r)), apps = optFilter(s, appsAll), inst = DB.config.institutionName || '', facLabel = (svcFacs(s).length && VIEW.fac ? ` (${VIEW.fac === '__none' ? '시설 미지정' : VIEW.fac})` : '') + optLabel(s);
+  const fw = $('#rep-fac-wrap'); if (fw) { fw.innerHTML = facSelectHtml(s, 'rep-fac') + ' ' + optSelectHtml(s, 'rep-opt', appsAll); wireOptSelect(s, 'rep-opt'); const fx = $('#rep-fac'); if (fx) fx.onchange = () => { VIEW.fac = fx.value; renderAll(); }; }
   const DEP = payMode(s) === 'deposit', FUND = useFund(s), ADDR = addrMode(s) !== 'off', PROG = (s.programs || []).length || s.useGuardian, EXT = pubFields(s, true).length > 0;
   const td = 'border border-slate-300 p-2', th = (t, c = '') => `<th class="${td} ${c}">${t}</th>`;
   $$('#rep-doc-toggle [data-doc]').forEach(b => { const on = b.dataset.doc === DOC; b.className = `px-3 py-1.5 rounded-md ${on ? 'bg-ewelfare-900 text-white' : 'text-slate-600 hover:bg-slate-100'}`; });
@@ -4091,7 +4108,7 @@ async function exportStatsXlsx() {
 /** 결재 문서를 파일로: 구입 신청 명부 / 수령 확인 대장 (서명 이미지는 PDF에만 들어감) */
 async function exportReportXlsx() {
   await loadLib('xlsx'); const X = window.XLSX, s = curSvc(), r = curRound(s), DOC = VIEW.doc === 'receipt' ? 'receipt' : 'apply';
-  const apps = facFilter(s, roundApps(r)), FUND = useFund(s), DEP = payMode(s) === 'deposit', ADDR = addrMode(s) !== 'off', EXT = pubFields(s, true).length > 0;
+  const apps = optFilter(s, facFilter(s, roundApps(r))), FUND = useFund(s), DEP = payMode(s) === 'deposit', ADDR = addrMode(s) !== 'off', EXT = pubFields(s, true).length > 0;
   const nm = a => a.isPurged ? '익명(파기됨)' : (VIEW.mask ? maskName(piiOf(a)?.name || '') : (piiOf(a)?.name || ''));
   const title = $('#report-title').textContent, head = [[DB.config.institutionName || ''], [title], [`회차: ${r.name}`, `작성일: ${ymd()}`], []];
   const qty = [['품목', '단가(원)', DOC === 'apply' ? '신청 수량' : '수령 수량', '금액(원)'], ...s.items.map(it => { const list = DOC === 'apply' ? apps : apps.filter(a => a.isReceived); const q = list.reduce((x, a) => x + (a.itemQty?.[it.id] || 0), 0); return [it.name, it.price || 0, q, q * (it.price || 0)]; })];
