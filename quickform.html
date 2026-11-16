@@ -454,7 +454,7 @@ const APP_NAME = 'QuickForm';
 /** SharePoint 문서 라이브러리 안의 저장 폴더 기본값. 기관마다 배포 링크에 &folder=경로 로 바꿀 수 있음 */
 const DATA_FOLDER = 'QuickFormData';
 const LEGACY_FOLDERS = ['EWelfareData/QuickForm'];   // 예전 기본값 — 이미 쓰던 기관은 자동으로 이어서 씀
-const APP_VERSION = 'QF-5.11.0 · 11-16 14:00';
+const APP_VERSION = 'QF-5.11.1 · 11-16 16:00';
 const GRAPH = 'https://graph.microsoft.com/v1.0';
 /** 권한 범위: 기본 Sites.ReadWrite.All, 배포 링크에 &perm=selected 면 Sites.Selected(지정한 사이트만) */
 const scopeStr = () => `openid profile email offline_access https://graph.microsoft.com/${Infra.cfg.permSelected ? 'Sites.Selected' : 'Sites.ReadWrite.All'}`;
@@ -724,7 +724,7 @@ const Store = {
   },
   /** 최신본을 읽어 fn 적용 후 If-Match 로 저장. 동시 수정 시 자동 재시도 */
   async mutate(rel, init, fn) {
-    for (let i = 0; i < 6; i++) {
+    for (let i = 0; i < 12; i++) {   // 여러 태블릿이 동시에 저장하면 최신 파일을 다시 읽어 다시 시도
       const { data, etag } = await this.readJson(rel);
       const d = data || init();
       const res = await fn(d);
@@ -733,7 +733,7 @@ const Store = {
         const et = await this.writeJson(rel, d, etag);
         return { data: d, etag: et, result: res };
       } catch (e) {
-        if (e instanceof ConflictError) { await sleep(250 * (i + 1) + Math.random() * 300); continue; }
+        if (e instanceof ConflictError) { await sleep(Math.min(250 * (i + 1), 1500) + Math.random() * 500); continue; }
         throw e;
       }
     }
@@ -3917,23 +3917,32 @@ function renderCheckin(s) {
   const tot = apps.filter(a => ckAppSess(s, a).includes(sess)).reduce((x, a) => x + appPeople(s, a).length, 0), done = apps.reduce((x, a) => x + Object.keys(a.ck?.[sess] || {}).length, 0);
   bar.innerHTML = `${SS.length > 1 ? `<div class="flex flex-wrap gap-2 justify-center">${SS.map(v => `<button type="button" data-cks="${esc(v)}" class="px-4 py-2 rounded-full border-2 text-sm font-bold ${v === sess ? 'bg-ewelfare-900 text-white border-ewelfare-900' : 'bg-white text-slate-600 border-slate-300'}">${esc(v)}</button>`).join('')}</div>` : ''}
     <p class="text-center text-xs text-slate-500">${SS.length > 1 ? `이 태블릿: <b class="text-ewelfare-800">${esc(sess)}</b> 확인 · ` : ''}확인 <b class="text-ewelfare-800">${done}</b>명 / 신청 ${tot}명</p>`;
+  if (ckNoSig(s, sess)) bar.insertAdjacentHTML('beforeend', `<div class="flex flex-wrap items-center justify-center gap-2 text-xs"><span class="text-slate-500">${esc(sess)}: 서명 없이 직원이 참석 체크</span><label class="flex items-center gap-1"><input type="checkbox" id="kiosk-ck-todo" ${LS.get('qf:cktodo') === '1' ? 'checked' : ''}> 미확인만</label><button type="button" id="kiosk-ck-add" class="qf-btn !py-1 bg-white border border-slate-300"><i class="fa-solid fa-user-plus"></i> 명단에 없는 분(내외빈) 추가</button></div>`);
+  { const t = $('#kiosk-ck-todo'); if (t) t.onchange = () => { LS.set('qf:cktodo', t.checked ? '1' : ''); renderKioskResults(); }; const ad = $('#kiosk-ck-add'); if (ad) ad.onclick = () => ckAddGuest(s, sess); }
   bar.querySelectorAll('[data-cks]').forEach(b => b.onclick = () => { LS.set('qf:ck:' + s.id, b.dataset.cks); renderKioskResults(); });
   if (KCK) return;
   const box = $('#kiosk-search-results');
   const q = $('#kiosk-search-input').value.trim(), qn = norm(q), qd = q.replace(/\D/g, '');
-  if (qn.length < 2 && qd.length < 4) { box.innerHTML = `<p class="text-xs text-slate-400 text-center py-3">${pending.length ? '<i class="fa-solid fa-circle-notch spin"></i> 불러오는 중… ' : ''}성함 전체(동반자 성함도 됩니다) 또는 전화번호 뒤 4자리를 입력하세요.</p>`; return; }
-  const hits = apps.filter(a => { const p = piiOf(a); if (!p) return false; const ph = String(p.phone || '').replace(/\D/g, '');
-    return (qn.length >= 2 && appPeople(s, a).some(x => x.name && norm(x.name) === qn)) || (qd.length === 4 && ph.endsWith(qd)); }).slice(0, 6);
+  const NS = ckNoSig(s, sess), todo = NS && LS.get('qf:cktodo') === '1';
+  let hits;
+  if (qn.length < 2 && qd.length < 4) {
+    if (!NS) { box.innerHTML = `<p class="text-xs text-slate-400 text-center py-3">${pending.length ? '<i class="fa-solid fa-circle-notch spin"></i> 불러오는 중… ' : ''}성함 전체(동반자 성함도 됩니다) 또는 전화번호 뒤 4자리를 입력하세요.</p>`; return; }
+    // 직원 체크 구분: 검색 없이 그 구분 신청자 전체 (가나다순)
+    hits = apps.filter(a => piiOf(a) && ckAppSess(s, a).includes(sess)).sort((a, b) => String(piiOf(a).name).localeCompare(String(piiOf(b).name), 'ko'));
+    if (todo) hits = hits.filter(a => appPeople(s, a).some((x, i) => !a.ck?.[sess]?.[i]));
+  } else hits = apps.filter(a => { const p = piiOf(a); if (!p) return false; const ph = String(p.phone || '').replace(/\D/g, '');
+    return (NS && qn.length >= 1 && (appPeople(s, a).some(x => x.name && norm(x.name).includes(qn)) || norm((p.ext || {})[(s.fields || []).find(f => /소속/.test(f.label || ''))?.id] || '').includes(qn))) || (qn.length >= 2 && appPeople(s, a).some(x => x.name && norm(x.name) === qn)) || (qd.length === 4 && ph.endsWith(qd)); }).slice(0, NS ? 40 : 6);
   if (!hits.length) { box.innerHTML = `<p class="text-xs text-slate-400 text-center py-3">${pending.length ? '<i class="fa-solid fa-circle-notch spin"></i> 불러오는 중…' : '찾지 못했습니다. 성함을 빠짐없이 입력해 주세요.'}</p>`; return; }
+  const nmShow = n => NS ? n : maskNameAlways(n);   // 직원이 체크하는 화면은 실명
   box.innerHTML = hits.map(a => {
     const p = piiOf(a), mine = ckAppSess(s, a), ok = mine.includes(sess), MK = ckMarks(s, sess), org = (p.ext || {})[(s.fields || []).find(f => /소속/.test(f.label || ''))?.id] || '';
     return `<div class="border border-slate-200 rounded-lg bg-slate-50 p-3 space-y-2 text-sm">
-      <div class="flex flex-wrap items-center gap-2"><b class="text-slate-900">${esc(maskNameAlways(p.name))}</b>${p.phone ? `<span class="text-slate-500 text-xs">(…${esc(String(p.phone).replace(/\D/g, '').slice(-4))})</span>` : ''}${org ? `<span class="text-xs text-slate-500">${esc(org)}</span>` : ''}
+      <div class="flex flex-wrap items-center gap-2"><b class="text-slate-900">${esc(nmShow(p.name))}</b>${a.userType && a.userType !== '이용자' ? `<span class="text-[11px] px-1.5 rounded bg-violet-100 text-violet-800">${esc(a.userType)}</span>` : ''}${p.phone ? `<span class="text-slate-500 text-xs">(…${esc(String(p.phone).replace(/\D/g, '').slice(-4))})</span>` : ''}${org ? `<span class="text-xs text-slate-500">${esc(org)}</span>` : ''}
         ${SS.length > 1 ? `<span class="text-[11px] ${ok ? 'text-emerald-700' : 'text-amber-700 font-bold'}">${ok ? '' : '이 행사 신청 없음 · '}신청: ${esc(mine.join(', ') || '-')}</span>` : ''}</div>
       ${appPeople(s, a).map((x, idx) => { const c = a.ck?.[sess]?.[idx];
-        return `<div class="flex flex-wrap items-center gap-2 bg-white border border-slate-200 rounded-md px-2 py-1.5"><span class="flex-1 min-w-0">${x.lead ? '' : '<span class="text-[11px] text-slate-400 mr-1">동반</span>'}${x.name ? esc(maskNameAlways(x.name)) : '<span class="text-slate-400">(성함 미기재)</span>'}</span>
+        return `<div class="flex flex-wrap items-center gap-2 bg-white border border-slate-200 rounded-md px-2 py-1.5"><span class="flex-1 min-w-0">${x.lead ? '' : '<span class="text-[11px] text-slate-400 mr-1">동반</span>'}${x.name ? esc(nmShow(x.name)) : '<span class="text-slate-400">(성함 미기재)</span>'}</span>
           ${MK.map(m => `<label class="text-xs flex items-center gap-1 px-2 py-1 rounded border ${a.mk?.[m.id]?.[idx] ? 'bg-sky-50 border-sky-300 text-sky-800' : 'border-slate-200 text-slate-600'}"><input type="checkbox" ${a.mk?.[m.id]?.[idx] ? 'checked' : ''} onchange="ckToggleMark('${esc(a.id)}','${esc(m.id)}',${idx},this.checked)"> ${esc(m.label)}</label>`).join('')}
-          ${c ? `<span class="text-xs font-bold text-emerald-700"><i class="fa-solid fa-circle-check"></i> 확인 ${esc(String(c.at || '').slice(11))}</span>` : `<button type="button" onclick="ckStart('${esc(a.id)}',${idx})" class="px-3 py-1.5 rounded-md bg-emerald-700 text-white text-xs font-bold"><i class="fa-solid fa-pen-nib"></i> 서명</button>`}</div>`; }).join('')}
+          ${NS ? (c ? `<button type="button" onclick="ckCheck('${esc(a.id)}',${idx},false)" class="px-3 py-1.5 rounded-md bg-emerald-100 text-emerald-800 text-xs font-bold" title="누르면 체크 취소"><i class="fa-solid fa-circle-check"></i> 참석 ${esc(String(c.at || '').slice(11))}</button>` : `<button type="button" onclick="ckCheck('${esc(a.id)}',${idx},true)" class="px-4 py-1.5 rounded-md bg-ewelfare-900 text-white text-xs font-bold">참석 체크</button>`) : c ? `<span class="text-xs font-bold text-emerald-700"><i class="fa-solid fa-circle-check"></i> 확인 ${esc(String(c.at || '').slice(11))}</span>` : `<button type="button" onclick="ckStart('${esc(a.id)}',${idx})" class="px-3 py-1.5 rounded-md bg-emerald-700 text-white text-xs font-bold"><i class="fa-solid fa-pen-nib"></i> 서명</button>`}</div>`; }).join('')}
     </div>`;
   }).join('');
 }
@@ -3972,6 +3981,32 @@ async function ckSave() {
     }, '서명 저장 중…');
     if (ok) { UI.toast('참석 확인되었습니다. 감사합니다!'); if (typed && a0) await loadPii(a0.roundId, true).catch(() => { }); KCK = null; SIG_URLS.at = 0; closeKioskBox(); }
   } catch (e) { console.error(e); UI.alert(`서명을 저장하지 못했습니다. [지우기] 후 다시 서명해 주세요.\n(${esc(e.message || String(e))})`, '저장 실패'); }
+}
+async function ckCheck(id, idx, on) {
+  const a0 = DB.applications.find(x => x.id === id), s = a0 && findSvc(DB, a0.serviceId); if (!a0) return;
+  const sess = ckDevSess(s, ckSessions(s, ckRounds(s).flatMap(r => roundApps(r))));
+  if (!on && !await UI.confirm('참석 체크를 취소할까요?', { okText: '체크 취소', danger: true })) return;
+  await wrap(() => mutateMain(d => { const a = d.applications.find(x => x.id === id); if (!a) return false; a.ck ||= {}; a.ck[sess] ||= {};
+    if (on) { if (a.ck[sess][idx]) return false; a.ck[sess][idx] = { at: ymdhm(), by: Auth.email || '', sig: 0 }; } else { if (!a.ck[sess][idx]) return false; delete a.ck[sess][idx]; } }));
+}
+/** 명단에 없는 분(내외빈 등)을 현장에서 추가하고 바로 참석 체크 */
+async function ckAddGuest(s, sess) {
+  const F = re => (s.fields || []).find(f => re.test(f.label || '')), orgF = F(/소속/), posF = F(/직위|직책/), f = ckField(s);
+  const r = ckRounds(s)[0]; if (!r) return UI.alert('현재 회차가 없습니다.');
+  await UI.dialog({ title: '명단에 없는 분 추가', okText: '추가하고 참석 체크',
+    html: `<div class="space-y-2 text-sm"><input data-g="name" class="qf-in" placeholder="성함 (필수)">${orgF ? '<input data-g="org" class="qf-in" placeholder="소속">' : ''}${posF ? '<input data-g="pos" class="qf-in" placeholder="직위">' : ''}
+      <div class="flex flex-wrap gap-3 text-xs">${['내빈', '외빈', '현장 참석'].map((t, i) => `<label class="flex items-center gap-1"><input type="radio" name="g-type" value="${t}" ${i === 1 ? 'checked' : ''}> ${t}</label>`).join('')}</div>
+      <p class="text-[11px] text-slate-500">${esc(sess || '')} 참석으로 바로 체크되고, 신청 현황에 '직원 입력'으로 남습니다.</p></div>`,
+    async collect(b) {
+      const v = k => (b.querySelector(`[data-g="${k}"]`)?.value || '').trim(), name = v('name'); if (!name) throw new Error('성함을 적어 주세요.');
+      const it = s.items[0]?.id, o = { name, phone: '', userType: b.querySelector('input[name="g-type"]:checked').value, itemQty: it ? { [it]: 1 } : {}, submittedAt: ymdhm(), staffEntry: true };
+      const x = appFromApply(s, r.id, o, 'manual');
+      x.pii.ext = { ...(orgF && v('org') ? { [orgF.id]: v('org') } : {}), ...(posF && v('pos') ? { [posF.id]: v('pos') } : {}), ...(f && sess ? { [f.id]: f.type === 'check' ? '예' : f.type === 'multi' ? [sess] : sess } : {}) };
+      x.app.source = 'manual'; x.app.ck = { [sess]: { 0: { at: ymdhm(), by: Auth.email || '', sig: 0 } } };
+      await mutatePii(r.id, d => { d.entries[x.id] = x.pii; }, '');
+      await mutateMain(d => { d.applications.push(x.app); });
+      UI.toast(`${name} 님을 추가하고 참석 체크했습니다.`); return true;
+    } });
 }
 async function ckToggleMark(id, mid, idx, on) {
   if (roBlock()) return renderKioskResults();
@@ -4027,6 +4062,7 @@ function ckSessions(s, apps) { const f = ckField(s); if (!f) return ['']; return
 const ckKey = v => facKey(v || 'all').slice(0, 40) || 'all';
 const ckSigName = (aid, sess, idx) => `${aid}__${ckKey(sess)}__${idx}__${Date.now().toString(36)}`;   // 태블릿마다 다른 파일 이름 → 동시에 서명해도 덮어쓰지 않음
 const ckSigRel = (aid, name) => `${facDir(sidOfApp(aid), facOfApp(aid))}/signatures/${name}.png`;
+const ckNoSig = (s, sess) => (s?.checkin?.noSig || []).includes(sess);   // 서명 없이 직원이 참석만 체크 (예: 방명록을 따로 쓰는 기념식)
 const ckMarks = (s, sess) => (s.checkin?.marks || []).filter(m => m.label && (!m.only || m.only === sess));
 const appQty = a => Math.max(1, qtySum(a));
 /** 한 신청의 사람 목록: [{ name, lead }] — 동반자 성함 칸을 쉼표로 나눔, 모자라면 빈 이름 */
@@ -4087,7 +4123,7 @@ function renderReport(s, r) {
     $('#rep-info').innerHTML = info('행사', esc(r.name)) + (s.desc ? info('일시·장소', esc(s.desc)) : '') + info('신청', `${apps.length}건 · ${P.length}명`) + (sess !== null ? info('현장 확인', `${done}명 / ${P.length}명`) : info('이름 미기재 동반자', `${P.length - named}명 (빈 줄)`)) + (ckOn(s) && SS.length > 1 && sess === null ? `<p class="col-span-2 text-amber-700">위의 [${esc(ckField(s)?.label.replace(/\s*\*.*$/, '') || '구분')}]에서 하나를 고르면 그 행사의 서명·체크가 함께 나옵니다.</p>` : '');
     $('#rep-sec2-title').textContent = `참석자 명단 및 서명 (총 ${P.length}명)`;
     $('#rep-applicant-head').innerHTML = `<tr>${th('No', 'w-10 text-center')}${th('성명')}${th('소속')}${th('직위')}${th('구분')}${MK.map(m => th(esc(m.label), 'text-center')).join('')}${th('서명', 'text-center')}</tr>`;
-    const sigCell = x => { if (!x.ck) return ''; const u = SIG_URLS.sid === s.id && typeof x.ck.sig === 'string' ? SIG_URLS.map[x.ck.sig] : ''; return (u ? `<img src="${esc(u)}" class="h-8 mx-auto" alt="서명">` : '') + `<span class="block text-[9px] text-slate-500">${esc(String(x.ck.at || '').slice(11))}</span>`; };
+    const sigCell = x => { if (!x.ck) return ''; const u = SIG_URLS.sid === s.id && typeof x.ck.sig === 'string' ? SIG_URLS.map[x.ck.sig] : ''; return (u ? `<img src="${esc(u)}" class="h-8 mx-auto" alt="서명">` : x.ck.sig ? '' : '<span class="font-bold text-emerald-700">✔ 참석</span>') + `<span class="block text-[9px] text-slate-500">${esc(String(x.ck.at || '').slice(11))}</span>`; };
     $('#rep-applicant-body').innerHTML = P.length ? P.map((x, i) => `<tr class="${x.lead ? '' : 'text-slate-600'}"><td class="${td} text-center">${i + 1}</td><td class="${td} ${x.lead ? 'font-bold' : ''}" style="height:2.4rem;min-width:5.5rem">${esc(x.name)}</td><td class="${td}">${esc(x.org)}</td><td class="${td}">${esc(x.pos)}</td><td class="${td} text-[11px]">${esc(x.role)}</td>${MK.map(m => `<td class="${td} text-center">${x.a.mk?.[m.id]?.[x.idx] ? '✔' : ''}</td>`).join('')}<td class="${td} text-center" style="min-width:7rem">${sigCell(x)}</td></tr>`).join('') : `<tr><td colspan="${6 + MK.length}" class="${td} text-center text-slate-400">신청 내역이 없습니다.</td></tr>`;
     if (P.some(x => x.ck?.sig) && !_sigLoading && (!SIG_URLS.at || SIG_URLS.sid !== s.id || Date.now() - SIG_URLS.at > 30000)) { _sigLoading = true; loadSigUrls(s.id, true).then(() => { if (VIEW.tab === 'report') renderReport(curSvc(), curRound()); }).catch(() => { }).finally(() => { _sigLoading = false; }); }
   } else if (DOC === 'apply') {
@@ -4752,6 +4788,7 @@ async function openServiceEditor(id) {
       return `<label class="flex items-center gap-2"><input type="checkbox" data-s="ckOn" ${ck.on ? 'checked' : ''}> 사용 (태블릿 화면이 '참석 확인'으로 바뀝니다)</label>
       <div data-ckbox class="${ck.on ? '' : 'hidden'} space-y-2">
         <label class="block">구분 기준${H('신청서의 선택 질문(예: 참석 행사)의 보기마다 따로 확인합니다. 태블릿에서 어느 구분을 받을지 고릅니다.')}<select data-s="ckField" class="qf-in mt-1 !w-auto"><option value="">구분 없음 (한 번만 확인)</option>${FF.map(f => `<option value="${esc(f.id)}" ${f.id === ck.byField ? 'selected' : ''}>${esc(f.label.replace(/\s*\*.*$/, ''))}</option>`).join('')}</select></label>
+        <div data-nosigbox>${(() => { const SS = sessOf(ck.byField); return SS.length ? `<p>서명 없이 직원이 참석만 체크할 구분${H('방명록을 따로 쓰는 행사처럼, 태블릿에서 서명 대신 직원이 [참석 체크]를 누르고 명단에 없는 내외빈도 바로 추가합니다.')}</p><div class="flex flex-wrap gap-3 mt-1">${SS.map(v => `<label class="flex items-center gap-1"><input type="checkbox" data-nosig value="${esc(v)}" ${(ck.noSig || []).includes(v) ? 'checked' : ''}> ${esc(v)}</label>`).join('')}</div>` : ''; })()}</div>
         <label class="flex items-center gap-2"><input type="checkbox" data-s="ckPer" ${ck.perPerson !== false ? 'checked' : ''}> 동반자도 한 명씩 서명 (끄면 신청자 1명만)</label>
         <div><p>추가 체크 항목</p><div data-mklist class="space-y-1 mt-1">${(ck.marks || []).map(mkRow).join('')}</div><button type="button" data-mkadd class="mt-1 text-ewelfare-700 text-xs font-semibold">+ 항목 추가</button><template data-mktpl>${mkRow()}</template></div>
       </div>`; })())}
@@ -4864,7 +4901,7 @@ async function openServiceEditor(id) {
         userTypes: readChips(b, 'userTypes'), useGuardian: g('useGuardian').checked,
         payMode: g('payMode').value, phoneMode: g('phoneMode').value, addrMode: g('addrMode').value, useFund: g('useFund').checked, funds: readChips(b, 'funds'), qtyMode: g('qtyMode').value, isGrid: g('qtyMode').value !== 'total', closedMsg: g('closedMsg').value.trim(), hideDlTime: g('hideDlTime').checked, formal: g('formal').checked, qtyLabel: g('qtyLabel').value.trim().slice(0, 30), unit: g('unit').value.trim().slice(0, 5), qtyPos: g('qtyPos').value, qtyFirst: undefined,
         ...(admin ? { managers, kioskUsers, facilityStaff, viewers } : {}),
-        checkin: { on: g('ckOn').checked, byField: g('ckField').value, perPerson: g('ckPer').checked, marks: [...b.querySelectorAll('[data-mkrow]')].map(r => ({ id: r.querySelector('[data-mk="id"]').value || uid('MK'), label: r.querySelector('[data-mk="label"]').value.trim(), only: r.querySelector('[data-mk="only"]').value })).filter(m => m.label) },
+        checkin: { on: g('ckOn').checked, byField: g('ckField').value, perPerson: g('ckPer').checked, noSig: [...b.querySelectorAll('[data-nosig]:checked')].map(x => x.value), marks: [...b.querySelectorAll('[data-mkrow]')].map(r => ({ id: r.querySelector('[data-mk="id"]').value || uid('MK'), label: r.querySelector('[data-mk="label"]').value.trim(), only: r.querySelector('[data-mk="only"]').value })).filter(m => m.label) },
         days: g('qtyMode').value !== 'total' ? readChips(b, 'days') : [], items, reportTitle: g('reportTitle').value.trim(), reportFooter: g('reportFooter').value.trim()
       };
       return { patch, ro };
@@ -4899,6 +4936,7 @@ async function openServiceEditor(id) {
         b.querySelector('[data-mkadd]').onclick = () => { ml.insertAdjacentHTML('beforeend', tpl.innerHTML); };
         ml.addEventListener('click', e => { if (e.target.closest('[data-mkdel]')) e.target.closest('[data-mkrow]').remove(); });
         b.querySelector('[data-s="ckField"]').onchange = e => { const f = (s0.fields || []).find(x => x.id === e.target.value), allA = DB.applications.filter(a => a.serviceId === s0.id), vals = !f ? [] : f.type === 'check' ? [f.label] : optVals(s0, f, allA);
+          b.querySelector('[data-nosigbox]').innerHTML = vals.length ? `<p>서명 없이 직원이 참석만 체크할 구분</p><div class="flex flex-wrap gap-3 mt-1">${vals.map(v => `<label class="flex items-center gap-1"><input type="checkbox" data-nosig value="${esc(v)}"> ${esc(v)}</label>`).join('')}</div>` : '';
           b.querySelectorAll('[data-mk="only"]').forEach(sel => { const cur = sel.value; sel.innerHTML = `<option value="">모든 구분</option>${vals.map(v => `<option ${v === cur ? 'selected' : ''}>${esc(v)}</option>`).join('')}`; }); }; }
       const modeSel = b.querySelector('[data-mode]');
       const pm = b.querySelector('[data-s="payMode"]'); pm.addEventListener('change', () => { const x = b.querySelector('[data-pricevis]'), none = pm.value === 'none'; x.textContent = none ? '직원만 봄' : '신청자에게 보임'; x.className = `ml-1 px-1.5 py-0.5 rounded font-normal ${none ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`; });
