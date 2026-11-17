@@ -458,7 +458,7 @@ const APP_NAME = 'QuickForm';
 /** SharePoint 문서 라이브러리 안의 저장 폴더 기본값. 기관마다 배포 링크에 &folder=경로 로 바꿀 수 있음 */
 const DATA_FOLDER = 'QuickFormData';
 const LEGACY_FOLDERS = ['EWelfareData/QuickForm'];   // 예전 기본값 — 이미 쓰던 기관은 자동으로 이어서 씀
-const APP_VERSION = 'QF-5.14.2 · 11-17 18:00';
+const APP_VERSION = 'QF-5.15.0 · 11-17 19:00';
 const GRAPH = 'https://graph.microsoft.com/v1.0';
 /** 권한 범위: 기본 Sites.ReadWrite.All, 배포 링크에 &perm=selected 면 Sites.Selected(지정한 사이트만) */
 const scopeStr = () => `openid profile email offline_access https://graph.microsoft.com/${Infra.cfg.permSelected ? 'Sites.Selected' : 'Sites.ReadWrite.All'}`;
@@ -3954,7 +3954,7 @@ function renderCheckin(s) {
   if (KCK) return;
   const box = $('#kiosk-search-results');
   const q = $('#kiosk-search-input').value.trim(), qn = norm(q), qd = q.replace(/\D/g, '');
-  $('#kiosk-search-input').placeholder = '성함·기관명, 초성(예: ㅎㄱㄷ) 또는 전화번호 뒤 4자리'; if (q) CKIDX = '';
+  $('#kiosk-search-input').placeholder = '성함·기관명, 초성(예: ㅎㄱㄷ), 테이블 번호 또는 전화번호 뒤 4자리'; if (q) CKIDX = '';
   const NS = ckNoSig(s, sess), todo = LS.get('qf:cktodo') === '1', all = NS || LS.get('qf:ckall') !== '0', byOrg = LS.get('qf:cksort') === 'org', preM = ckMarks(s, sess).find(m => m.ifField && m.id === LS.get('qf:ckpre'));
   box.style.maxHeight = all ? 'none' : '';
   const orgF = (s.fields || []).find(f => /소속|기관/.test(f.label || '')), orgOf = a => String((piiOf(a)?.ext || {})[orgF?.id] || '').trim();
@@ -3969,7 +3969,8 @@ function renderCheckin(s) {
     if (!all) { box.innerHTML = `<p class="text-xs text-slate-400 text-center py-3">${pending.length ? '<i class="fa-solid fa-circle-notch spin"></i> 불러오는 중… ' : ''}성함·기관명(일부도 됩니다) 또는 전화번호 뒤 4자리를 입력하세요.</p>`; return; }
     hits = apps.filter(a => piiOf(a) && sessPeople(s, a, sess).length);
     if (CKIDX) hits = hits.filter(a => byOrg ? cho1(orgOf(a)) === CKIDX : sessPeople(s, a, sess).some(x => cho1(x.name) === CKIDX));
-  } else { const ch = /^[ㄱ-ㅎ]+$/.test(qn); hits = apps.filter(a => { const p = piiOf(a); if (!p) return false; const ph = String(p.phone || '').replace(/\D/g, '');
+  } else if (/^\d{1,2}$/.test(qd) && qd === qn) { hits = apps.filter(a => piiOf(a) && sessPeople(s, a, sess).some(x => String(pInf(a, x.i)?.seat || '') === qd)); }
+  else { const ch = /^[ㄱ-ㅎ]+$/.test(qn); hits = apps.filter(a => { const p = piiOf(a); if (!p) return false; const ph = String(p.phone || '').replace(/\D/g, '');
     return ch ? appPeople(s, a).some(x => x.name && cho(norm(x.name)).includes(qn)) || cho(norm(orgOf(a))).includes(qn)
       : (qn.length >= 1 && (appPeople(s, a).some(x => x.name && norm(x.name).includes(qn)) || norm(orgOf(a)).includes(qn))) || (qd.length === 4 && ph.endsWith(qd)); }); }
   if (todo) hits = hits.filter(a => sessPeople(s, a, sess).some(x => !a.ck?.[sess]?.[x.i]));
@@ -3985,7 +3986,8 @@ function renderCheckin(s) {
       <div class="flex flex-wrap items-center gap-2"><b class="text-slate-900">${esc(nmShow(p.name))}</b>${a.userType && a.userType !== '이용자' ? `<span class="text-[11px] px-1.5 rounded bg-violet-100 text-violet-800">${esc(a.userType)}</span>` : ''}${p.phone ? `<span class="text-slate-500 text-xs">(…${esc(String(p.phone).replace(/\D/g, '').slice(-4))})</span>` : ''}${org ? `<span class="text-xs text-slate-500">${esc(org)}</span>` : ''}
         ${SS.length > 1 ? `<span class="text-[11px] ${ok ? 'text-emerald-700' : 'text-amber-700 font-bold'}">${ok ? '' : '이 행사 신청 없음 · '}신청: ${esc(mine.join(', ') || '-')}</span>` : ''}</div>
       ${appPeople(s, a).map((x, idx) => { if (ok && !personSess(s, a, idx).includes(sess)) return ''; const c = a.ck?.[sess]?.[idx];
-        return `<div class="flex flex-wrap items-center gap-2 bg-white border border-slate-200 rounded-md px-2 py-1.5"><span class="flex-1 min-w-0">${x.lead ? '' : '<span class="text-[11px] text-slate-400 mr-1">동반</span>'}${x.name ? esc(nmShow(x.name)) : '<span class="text-slate-400">(성함 미기재)</span>'}</span>
+        const st = seatFor(s, a, idx, sess), tt = titleFor(s, a, idx);
+        return `<div class="flex flex-wrap items-center gap-2 bg-white border border-slate-200 rounded-md px-2 py-1.5"><span class="flex-1 min-w-0">${x.lead ? '' : '<span class="text-[11px] text-slate-400 mr-1">동반</span>'}${x.name ? esc(nmShow(x.name)) : '<span class="text-slate-400">(성함 미기재)</span>'}${tt ? ` <span class="text-xs text-slate-500">${esc(tt)}</span>` : ''}</span>${st ? `<span class="px-2 py-1 rounded-md text-sm font-black text-white" style="background:#047857">${esc(st)}</span>` : ''}
           ${mkFor(s, a, idx, sess).map(m => `<label class="text-xs flex items-center gap-1 px-2 py-1 rounded border ${a.mk?.[m.id]?.[idx] ? 'bg-sky-50 border-sky-300 text-sky-800' : 'border-slate-200 text-slate-600'}"><input type="checkbox" ${a.mk?.[m.id]?.[idx] ? 'checked' : ''} onchange="ckToggleMark('${esc(a.id)}','${esc(m.id)}',${idx},this.checked)"> ${esc(m.label)}${m.num && a.mk?.[m.id]?.[idx]?.no ? ` <b>${esc(mkNoText(m, a.mk[m.id][idx]))}</b>` : ''}${a.mk?.[m.id]?.[idx]?.opt ? ` <b>${esc(a.mk[m.id][idx].opt)}</b>` : ''}${m.ifField && m.walkIn && mkPre(a, m) && !a.mk?.[m.id]?.[idx] ? ` <span class="px-1 rounded text-amber-900 font-bold" style="background:#fde68a">사전신청${(v => v ? ' · ' + esc(v) : '')(mkPrefer(s, a, idx, m))}</span>` : ''}</label>`).join('')}
           ${NS ? (c ? `<button type="button" onclick="ckCheck('${esc(a.id)}',${idx},false)" class="px-3 py-1.5 rounded-md bg-emerald-100 text-emerald-800 text-xs font-bold" title="누르면 체크 취소"><i class="fa-solid fa-circle-check"></i> 참석 ${esc(String(c.at || '').slice(11))}</button>` : `<button type="button" onclick="ckCheck('${esc(a.id)}',${idx},true)" class="px-4 py-1.5 rounded-md bg-ewelfare-900 text-white text-xs font-bold">참석 체크</button>`) : c ? (c.sig ? `<span class="text-xs font-bold text-emerald-700"><i class="fa-solid fa-circle-check"></i> 서명 ${esc(String(c.at || '').slice(11))}</span>` : `<button type="button" onclick="ckCheck('${esc(a.id)}',${idx},false)" class="px-3 py-1.5 rounded-md bg-emerald-100 text-emerald-800 text-xs font-bold" title="누르면 체크 취소"><i class="fa-solid fa-circle-check"></i> 참석(서명 생략) ${esc(String(c.at || '').slice(11))}</button>`) : `${s.checkin?.staffOk !== false ? `<button type="button" onclick="ckCheck('${esc(a.id)}',${idx},true,1)" class="px-2 py-1.5 rounded-md border border-slate-300 bg-white text-slate-600 text-xs" title="내빈 등 서명을 받지 않는 분">서명 생략</button>` : ''}<button type="button" onclick="ckStart('${esc(a.id)}',${idx})" class="px-3 py-1.5 rounded-md bg-emerald-700 text-white text-xs font-bold"><i class="fa-solid fa-pen-nib"></i> 서명</button>`}</div>`; }).join('')}
     </div>`;
@@ -4126,20 +4128,29 @@ const mkNoText = (m, v) => { if (!v?.no) return ''; const f = String(m.fmt || '{
 const mkCell = (m, v) => v ? (m.num && v.no ? mkNoText(m, v) : v.opt || '✔') : '';
 const ckMarks = (s, sess) => (s.checkin?.marks || []).filter(m => m.label && (!m.only || m.only === sess));
 /** 이 사람에게 나오는 추가 체크: m.ifField = 신청서 질문 id (답이 있는 신청만, 예: 주차권 '예'), m.leadOnly = 신청자 본인만 */
-const mkPre = (a, m) => !!m.ifField && !!(v => Array.isArray(v) ? v.length : v && v !== '아니오')(piiOf(a)?.ext?.[m.ifField]);
+/** 사람별 현장 안내: a.pInfo[사람번호] = { seat: '5' | 'H' | '배석' …, title: '관장', park: '2시간권' } (좌석배치표에서 불러옴) · s.checkin.seatSess = 좌석을 안내할 구분 */
+const pInf = (a, i) => a?.pInfo?.[i] || null;
+const seatText = v => { v = String(v || '').trim(); return !v ? '' : /^\d+$/.test(v) ? `${v}번 테이블` : v === 'H' ? 'H (VIP) 테이블' : v === '배석' ? '배석 좌석' : v === '대기' ? '대기 장소' : v === '없음' ? '좌석 없음 (직원)' : v; };
+const seatFor = (s, a, i, sess) => { const v = pInf(a, i)?.seat; const only = s?.checkin?.seatSess; return v && (!only || only === sess) ? seatText(v) : ''; };
+const titleFor = (s, a, i) => pInf(a, i)?.title || (i === 0 ? String((piiOf(a)?.ext || {})[(s.fields || []).find(f => /직위|직책/.test(f.label || ''))?.id] || '') : '');
+const mkPre = (a, m, i = 0) => !!m.ifField && (!!pInf(a, i)?.park || !!(v => Array.isArray(v) ? v.length : v && v !== '아니오')(piiOf(a)?.ext?.[m.ifField]));
 /** m.walkIn = 사전신청 안 한 분도 현장에서 체크(현장 신청) · m.opts = ['2시간권', …] 체크할 때 고름 */
-const mkFor = (s, a, idx, sess) => ckMarks(s, sess).filter(m => (!m.leadOnly || idx === 0) && (!m.ifField || m.walkIn || mkPre(a, m)));
+const mkFor = (s, a, idx, sess) => ckMarks(s, sess).filter(m => (!m.leadOnly || idx === 0 || (m.ifField && pInf(a, idx)?.park)) && (!m.ifField || m.walkIn || mkPre(a, m, idx)));
 /** m.prefer = '기념식=2시간권; 기념식+현장연구발표회=종일권' → 그 구분만 참석하는 사람에게 먼저 권할 것 */
-const mkPrefer = (s, a, idx, m) => { const k = [...personSess(s, a, idx)].sort().join('+'); for (const r of String(m.prefer || '').split(/[;\n]/)) { const [x, o] = r.split('=').map(v => (v || '').trim()); if (x && o && (m.opts || []).includes(o) && x.split('+').map(v => v.trim()).sort().join('+') === k) return o; } return ''; };
-const mkPick = (m, who, cancelText = '취소', pref = '') => (m.opts || []).length ? UI.dialog({ title: m.label, hideOk: true, cancelText,
-  html: `<p class="text-center font-bold mb-3">${esc(who)}</p>${pref ? `<button type="button" data-pk="${esc(pref)}" class="w-full py-5 mb-2 rounded-lg bg-ewelfare-900 text-white text-xl font-black">${esc(pref)} <span class="text-sm font-normal">(우선)</span></button>` : ''}<div style="display:grid;grid-template-columns:repeat(${Math.min(3, m.opts.length - (pref ? 1 : 0)) || 1},1fr);gap:.5rem">${m.opts.filter(o => o !== pref).map(o => `<button type="button" data-pk="${esc(o)}" class="${pref ? 'py-3 rounded-lg border border-slate-300 bg-white text-slate-700 text-sm font-bold' : 'py-4 rounded-lg bg-ewelfare-900 text-white text-base font-bold'}">${esc(o)}</button>`).join('')}</div>`,
+const mkPrefer = (s, a, idx, m) => { if (m.ifField && (m.opts || []).includes(pInf(a, idx)?.park)) return pInf(a, idx).park; const k = [...personSess(s, a, idx)].sort().join('+'); for (const r of String(m.prefer || '').split(/[;\n]/)) { const [x, o] = r.split('=').map(v => (v || '').trim()); if (x && o && (m.opts || []).includes(o) && x.split('+').map(v => v.trim()).sort().join('+') === k) return o; } return ''; };
+const mkPick = (m, who, cancelText = '취소', pref = '', head = '') => (m.opts || []).length ? UI.dialog({ title: m.label, hideOk: true, cancelText,
+  html: `${head}<p class="text-center font-bold mb-3">${esc(who)}</p>${pref ? `<button type="button" data-pk="${esc(pref)}" class="w-full py-5 mb-2 rounded-lg bg-ewelfare-900 text-white text-xl font-black">${esc(pref)} <span class="text-sm font-normal">(우선)</span></button>` : ''}<div style="display:grid;grid-template-columns:repeat(${Math.min(3, m.opts.length - (pref ? 1 : 0)) || 1},1fr);gap:.5rem">${m.opts.filter(o => o !== pref).map(o => `<button type="button" data-pk="${esc(o)}" class="${pref ? 'py-3 rounded-lg border border-slate-300 bg-white text-slate-700 text-sm font-bold' : 'py-4 rounded-lg bg-ewelfare-900 text-white text-base font-bold'}">${esc(o)}</button>`).join('')}</div>`,
   onOpen: (b, api) => b.querySelectorAll('[data-pk]').forEach(x => x.onclick = () => api.close(x.dataset.pk)) })
-  : UI.dialog({ title: m.label, html: `<p class="text-center text-lg font-bold">${esc(who)}</p><p class="text-center text-xs text-slate-500 mt-1">지금 드렸으면 [체크]</p>`, okText: '체크', cancelText }).then(v => v ? '' : null);
+  : UI.dialog({ title: m.label, html: `${head}<p class="text-center text-lg font-bold">${esc(who)}</p><p class="text-center text-xs text-slate-500 mt-1">지금 드렸으면 [체크]</p>`, okText: '체크', cancelText }).then(v => v ? '' : null);
 /** 확인 직후 바로 물어볼 추가 체크 (m.askAfter) */
 async function ckAskMarks(id, idx, sess) {
   const a = DB.applications.find(x => x.id === id), s = a && findSvc(DB, a.serviceId); if (!a) return;
-  for (const m of mkFor(s, a, idx, sess).filter(m => m.askAfter && (!m.ifField || mkPre(a, m)) && !a.mk?.[m.id]?.[idx])) {
-    const v = await mkPick(m, `${appPeople(s, a)[idx]?.name || ''} 님 · ${m.ifField ? '사전신청' : m.label}`, '나중에', mkPrefer(s, a, idx, m)); if (v !== null) await ckToggleMark(id, m.id, idx, true, v); }
+  const seat = seatFor(s, a, idx, sess), nm = appPeople(s, a)[idx]?.name || '', tt = titleFor(s, a, idx);
+  const head = seat ? `<div class="text-center mb-3 p-3 rounded-lg" style="background:#ecfdf5;border:2px solid #059669"><p class="text-sm text-slate-600">${esc(nm)} ${esc(tt)}님 좌석</p><p class="font-black text-ewelfare-900 mt-1" style="font-size:2.4rem;line-height:1.1">${esc(seat)}</p></div>` : '';
+  let shown = false;
+  for (const m of mkFor(s, a, idx, sess).filter(m => m.askAfter && (!m.ifField || mkPre(a, m, idx)) && !a.mk?.[m.id]?.[idx])) {
+    const v = await mkPick(m, `주차권 사전신청${pInf(a, idx)?.park ? ' · ' + pInf(a, idx).park : ''}`.replace(/^주차권 /, m.ifField ? '' : m.label + ' '), '나중에', mkPrefer(s, a, idx, m), shown ? '' : head); shown = true; if (v !== null) await ckToggleMark(id, m.id, idx, true, v); }
+  if (head && !shown) await UI.dialog({ title: '좌석 안내', html: head, okText: '확인', cancelText: '', onOpen: (b, api) => setTimeout(() => api.close(true), 6000) });
 }
 const appQty = a => Math.max(1, qtySum(a));
 /** 한 신청의 사람 목록: [{ name, lead }] — 동반자 성함 칸을 쉼표로 나눔, 모자라면 빈 이름 */
@@ -4162,7 +4173,7 @@ function attendPeople(s, apps, sess = null) {
   const out = [];
   apps.slice().sort((a, b) => String(piiOf(a)?.name || '').localeCompare(String(piiOf(b)?.name || ''), 'ko')).forEach(a => {
     const p = piiOf(a) || keptOf(a) || {}, e = p.ext || {}, org = String(e[orgF?.id] || '');
-    appPeople(s, a).forEach((x, idx) => (sessF && ckOn(s) && !personSess(s, a, idx).includes(sessF)) ? null : out.push({ a, idx, name: a.isPurged && !keptOf(a) ? '익명(파기됨)' : nm(x.name), org, pos: x.lead ? String(e[posF?.id] || '') : '', role: x.lead ? '신청자' : `동반 (${nm(p.name)})`, lead: x.lead, ck: sess !== null ? a.ck?.[sess]?.[idx] || null : null }));
+    appPeople(s, a).forEach((x, idx) => (sessF && ckOn(s) && !personSess(s, a, idx).includes(sessF)) ? null : out.push({ a, idx, name: a.isPurged && !keptOf(a) ? '익명(파기됨)' : nm(x.name), org, pos: pInf(a, idx)?.title || (x.lead ? String(e[posF?.id] || '') : ''), seat: seatText(pInf(a, idx)?.seat), role: x.lead ? '신청자' : `동반 (${nm(p.name)})`, lead: x.lead, ck: sess !== null ? a.ck?.[sess]?.[idx] || null : null }));
   });
   return out;
 }
@@ -4360,7 +4371,7 @@ async function exportReportXlsx() {
   if (DOC === 'attend') {
     const all = facFilter(s, roundApps(r)), apps = optFilter(s, all), SS = ckOn(s) ? ckSessions(s, all) : [], o = VIEW.opt && VIEW.opt.sid === s.id ? VIEW.opt.val : '', sess = ckOn(s) ? (SS.length === 1 ? SS[0] : SS.includes(o) ? o : null) : null, MK = sess !== null ? ckMarks(s, sess) : [];
     const P = attendPeople(s, apps, sess), title = $('#report-title').textContent;
-    const ws = X.utils.aoa_to_sheet([[DB.config.institutionName || ''], [title], [`행사: ${r.name}`, `작성일: ${ymd()}`, `총 ${P.length}명`], [], ['No', '성명', '소속', '직위', '구분', ...MK.map(m => m.label), ...(sess !== null ? ['현장 확인'] : []), '서명'], ...P.map((x, i) => [i + 1, x.name, x.org, x.pos, x.role, ...MK.map(m => { const c = mkCell(m, x.a.mk?.[m.id]?.[x.idx]); return c === '✔' ? 'O' : c; }), ...(sess !== null ? [x.ck?.at || ''] : []), ''])]);
+    const ws = X.utils.aoa_to_sheet([[DB.config.institutionName || ''], [title], [`행사: ${r.name}`, `작성일: ${ymd()}`, `총 ${P.length}명`], [], ['No', '성명', '소속', '직위', '구분', ...(P.some(x => x.seat) ? ['좌석'] : []), ...MK.map(m => m.label), ...(sess !== null ? ['현장 확인'] : []), '서명'], ...P.map((x, i) => [i + 1, x.name, x.org, x.pos, x.role, ...(P.some(x => x.seat) ? [x.seat] : []), ...MK.map(m => { const c = mkCell(m, x.a.mk?.[m.id]?.[x.idx]); return c === '✔' ? 'O' : c; }), ...(sess !== null ? [x.ck?.at || ''] : []), ''])]);
     ws['!cols'] = [4, 12, 26, 14, 18, 16].map(w => ({ wch: w }));
     const wb = X.utils.book_new(); X.utils.book_append_sheet(wb, ws, '참석자서명부'); X.writeFile(wb, `${title}_${ymd()}.xlsx`.replace(/[\\/:*?"<>|]/g, ''));
     if (VIEW.mask) UI.toast('개인정보 가림이 켜져 있어 성명을 가려 저장했습니다. 실명은 [개인정보 가림] OFF 후 저장하세요.', 'info');
@@ -4868,6 +4879,7 @@ async function openServiceEditor(id) {
         <label class="block">구분 기준${H('신청서의 선택 질문(예: 참석 행사)의 보기마다 따로 확인합니다. 태블릿에서 어느 구분을 받을지 고릅니다.')}<select data-s="ckField" class="qf-in mt-1 !w-auto"><option value="">구분 없음 (한 번만 확인)</option>${FF.map(f => `<option value="${esc(f.id)}" ${f.id === ck.byField ? 'selected' : ''}>${esc(f.label.replace(/\s*\*.*$/, ''))}</option>`).join('')}</select></label>
         <div data-nosigbox>${(() => { const SS = sessOf(ck.byField); return SS.length ? `<p>서명 없이 직원이 참석만 체크할 구분${H('방명록을 따로 쓰는 행사처럼, 태블릿에서 서명 대신 직원이 [참석 체크]를 누르고 명단에 없는 내외빈도 바로 추가합니다.')}</p><div class="flex flex-wrap gap-3 mt-1">${SS.map(v => `<label class="flex items-center gap-1"><input type="checkbox" data-nosig value="${esc(v)}" ${(ck.noSig || []).includes(v) ? 'checked' : ''}> ${esc(v)}</label>`).join('')}</div>` : ''; })()}</div>
         <label class="flex items-center gap-2"><input type="checkbox" data-s="ckPer" ${ck.perPerson !== false ? 'checked' : ''}> 동반자도 한 명씩 서명 (끄면 신청자 1명만)</label>
+        ${DB.applications.some(a => a.serviceId === s0.id && a.pInfo) ? `<label class="block">좌석 안내할 구분${H('좌석배치표로 불러온 테이블 번호를 이 구분 태블릿에서 이름 옆과 서명 직후에 크게 보여 줍니다.')}<select data-s="ckSeat" class="qf-in mt-1 !w-auto"><option value="">모든 구분</option>${sessOf(ck.byField).map(v => `<option ${v === ck.seatSess ? 'selected' : ''}>${esc(v)}</option>`).join('')}</select></label>` : ''}
         <label class="flex items-center gap-2"><input type="checkbox" data-s="ckStaffOk" ${ck.staffOk !== false ? 'checked' : ''}> 서명 받는 구분에서도 [서명 생략] 버튼 보이기 (내빈 등은 직원이 체크)</label>
         <div><p>추가 체크 항목</p><div data-mklist class="space-y-1 mt-1">${(ck.marks || []).map(mkRow).join('')}</div><button type="button" data-mkadd class="mt-1 text-ewelfare-700 text-xs font-semibold">+ 항목 추가</button><template data-mktpl>${mkRow()}</template></div>
       </div>`; })())}
@@ -4980,7 +4992,7 @@ async function openServiceEditor(id) {
         userTypes: readChips(b, 'userTypes'), useGuardian: g('useGuardian').checked,
         payMode: g('payMode').value, phoneMode: g('phoneMode').value, addrMode: g('addrMode').value, useFund: g('useFund').checked, funds: readChips(b, 'funds'), qtyMode: g('qtyMode').value, isGrid: g('qtyMode').value !== 'total', closedMsg: g('closedMsg').value.trim(), hideDlTime: g('hideDlTime').checked, formal: g('formal').checked, qtyLabel: g('qtyLabel').value.trim().slice(0, 30), unit: g('unit').value.trim().slice(0, 5), qtyPos: g('qtyPos').value, qtyFirst: undefined,
         ...(admin ? { managers, kioskUsers, facilityStaff, viewers } : {}),
-        checkin: { on: g('ckOn').checked, byField: g('ckField').value, perPerson: g('ckPer').checked, noSig: [...b.querySelectorAll('[data-nosig]:checked')].map(x => x.value), marks: [...b.querySelectorAll('[data-mkrow]')].map(r => ({ id: r.querySelector('[data-mk="id"]').value || uid('MK'), label: r.querySelector('[data-mk="label"]').value.trim(), only: r.querySelector('[data-mk="only"]').value, num: r.querySelector('[data-mk="num"]').checked, fmt: r.querySelector('[data-mk="fmt"]').value.trim(), ifField: r.querySelector('[data-mk="if"]').value, leadOnly: r.querySelector('[data-mk="lead"]').checked, askAfter: r.querySelector('[data-mk="ask"]').checked, walkIn: r.querySelector('[data-mk="walk"]').checked, prefer: r.querySelector('[data-mk="prefer"]').value.trim(), opts: r.querySelector('[data-mk="opts"]').value.split(/[,，\n]/).map(x => x.trim()).filter(Boolean) })).filter(m => m.label), staffOk: g('ckStaffOk').checked },
+        checkin: { on: g('ckOn').checked, byField: g('ckField').value, perPerson: g('ckPer').checked, noSig: [...b.querySelectorAll('[data-nosig]:checked')].map(x => x.value), marks: [...b.querySelectorAll('[data-mkrow]')].map(r => ({ id: r.querySelector('[data-mk="id"]').value || uid('MK'), label: r.querySelector('[data-mk="label"]').value.trim(), only: r.querySelector('[data-mk="only"]').value, num: r.querySelector('[data-mk="num"]').checked, fmt: r.querySelector('[data-mk="fmt"]').value.trim(), ifField: r.querySelector('[data-mk="if"]').value, leadOnly: r.querySelector('[data-mk="lead"]').checked, askAfter: r.querySelector('[data-mk="ask"]').checked, walkIn: r.querySelector('[data-mk="walk"]').checked, prefer: r.querySelector('[data-mk="prefer"]').value.trim(), opts: r.querySelector('[data-mk="opts"]').value.split(/[,，\n]/).map(x => x.trim()).filter(Boolean) })).filter(m => m.label), staffOk: g('ckStaffOk').checked, ...(g('ckSeat') ? { seatSess: g('ckSeat').value } : { seatSess: s0.checkin?.seatSess || '' }) },
         days: g('qtyMode').value !== 'total' ? readChips(b, 'days') : [], items, reportTitle: g('reportTitle').value.trim(), reportFooter: g('reportFooter').value.trim()
       };
       return { patch, ro };
