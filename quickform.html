@@ -62,6 +62,9 @@ body{word-break:keep-all;overflow-wrap:anywhere}
   .cfg-jump.on{background:rgb(var(--b-700));border-color:rgb(var(--b-700));color:#fff}
   #view-config [id^=cfgsec-], #view-config #cfg-lists, #view-config #cfg-facilities, #view-config #cfg-hol-box, #view-config #cfg-privacy, #view-config #cfg-hook{scroll-margin-top:72px}
 </style>
+<style>/* 태블릿·휴대폰: 주소창·툴바에 가려지지 않도록 실제 보이는 높이 사용 + 아래 여백 */
+.h-screen{height:100vh;height:100dvh}#main-content{padding-bottom:calc(8rem + env(safe-area-inset-bottom))}
+</style>
 <style>/* 열람 전용 계정: 처리·수정 버튼 숨김 */
 .qf-ro #btn-import,.qf-ro #btn-depmatch,.qf-ro #btn-manual,.qf-ro #btn-orgqty,.qf-ro #btn-hold,.qf-ro #btn-unarchive,.qf-ro #btn-lock-fix,.qf-ro #btn-newround,.qf-ro #btn-event,.qf-ro #btn-edit-svc,.qf-ro #btn-fund-bulk,.qf-ro #btn-blocklist,.qf-ro #admin-pii-meta button,.qf-ro #admin-lock-warn,.qf-ro #admin-table-body button{display:none!important}
 .qf-ro #admin-table-body select{pointer-events:none;opacity:.6}
@@ -455,7 +458,7 @@ const APP_NAME = 'QuickForm';
 /** SharePoint 문서 라이브러리 안의 저장 폴더 기본값. 기관마다 배포 링크에 &folder=경로 로 바꿀 수 있음 */
 const DATA_FOLDER = 'QuickFormData';
 const LEGACY_FOLDERS = ['EWelfareData/QuickForm'];   // 예전 기본값 — 이미 쓰던 기관은 자동으로 이어서 씀
-const APP_VERSION = 'QF-5.14.1 · 11-17 17:30';
+const APP_VERSION = 'QF-5.14.2 · 11-17 18:00';
 const GRAPH = 'https://graph.microsoft.com/v1.0';
 /** 권한 범위: 기본 Sites.ReadWrite.All, 배포 링크에 &perm=selected 면 Sites.Selected(지정한 사이트만) */
 const scopeStr = () => `openid profile email offline_access https://graph.microsoft.com/${Infra.cfg.permSelected ? 'Sites.Selected' : 'Sites.ReadWrite.All'}`;
@@ -3921,6 +3924,8 @@ function closeKioskBox() { kioskAppId = null; KCK = null; { const b = $('#btn-ki
 
 /* ---------- 태블릿: 현장 확인(행사 참석 체크) ---------- */
 let KCK = null;   // 서명 중인 사람 { id, sess, idx }
+// 태블릿 브라우저 주소창·툴바에 화면 아래쪽이 가려지지 않게: 실제 보이는 높이(dvh) 사용 + 명단 끝에 여유 공간
+document.head.insertAdjacentHTML('beforeend', '<style>@supports (height:100dvh){.h-screen{height:100dvh}}#view-kiosk{padding-bottom:50vh}</style>');
 let CKIDX = '';   // 태블릿 명단 첫 자음 (ㄱ~ㅎ)
 const CHO = 'ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ', CHO1 = { 'ㄲ': 'ㄱ', 'ㄸ': 'ㄷ', 'ㅃ': 'ㅂ', 'ㅆ': 'ㅅ', 'ㅉ': 'ㅈ' };
 const cho = s => [...String(s || '')].map(c => { const k = c.charCodeAt(0) - 0xAC00; return k >= 0 && k < 11172 ? CHO[Math.floor(k / 588)] : c; }).join('');
