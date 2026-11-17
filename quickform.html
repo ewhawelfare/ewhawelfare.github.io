@@ -458,7 +458,7 @@ const APP_NAME = 'QuickForm';
 /** SharePoint 문서 라이브러리 안의 저장 폴더 기본값. 기관마다 배포 링크에 &folder=경로 로 바꿀 수 있음 */
 const DATA_FOLDER = 'QuickFormData';
 const LEGACY_FOLDERS = ['EWelfareData/QuickForm'];   // 예전 기본값 — 이미 쓰던 기관은 자동으로 이어서 씀
-const APP_VERSION = 'QF-5.15.0 · 11-17 19:00';
+const APP_VERSION = 'QF-5.16.0 · 11-17 20:00';
 const GRAPH = 'https://graph.microsoft.com/v1.0';
 /** 권한 범위: 기본 Sites.ReadWrite.All, 배포 링크에 &perm=selected 면 Sites.Selected(지정한 사이트만) */
 const scopeStr = () => `openid profile email offline_access https://graph.microsoft.com/${Infra.cfg.permSelected ? 'Sites.Selected' : 'Sites.ReadWrite.All'}`;
@@ -1710,7 +1710,7 @@ function renderAdmin(s, r) {
     if (html) $('#stats-cards-container').insertAdjacentHTML('beforeend', `<div class="col-span-full text-xs -mt-2 space-y-0.5">${html}</div>`); }
   if (ckOn(s)) { const SS = ckSessions(s, appsAll), line = SS.map(v => { const tot = appsAll.reduce((x, a) => x + sessPeople(s, a, v).length, 0), done = appsAll.reduce((x, a) => x + Object.keys(a.ck?.[v] || {}).length, 0); const mk = ckMarks(s, v).map(m => { const R = appsAll.flatMap(a => Object.values(a.mk?.[m.id] || {})), by = (m.opts || []).map(o => [o, R.filter(r => r.opt === o).length]).filter(x => x[1]); return `${esc(m.label)} <b>${R.length}</b>${m.ifField ? `<span class="text-slate-400">/사전 ${appsAll.filter(a => mkPre(a, m)).length}</span>` : ''}${by.length ? ` (${by.map(([o, n]) => `${esc(o)} ${n}`).join(', ')})` : ''}`; }).join(' · ');
       return `<span class="inline-block mr-4 whitespace-nowrap"><b class="text-slate-800">${esc(v || '참석')}</b> 확인 <b class="text-emerald-700">${done}</b>/${tot}명${mk ? ` <span class="text-slate-500">(${mk})</span>` : ''}</span>`; }).join('');
-    $('#stats-cards-container').insertAdjacentHTML('beforeend', `<div class="col-span-full text-xs -mt-2"><span class="text-slate-500 mr-2"><i class="fa-solid fa-clipboard-check"></i> 현장 확인</span>${line}</div>`); }
+    $('#stats-cards-container').insertAdjacentHTML('beforeend', `<div class="col-span-full text-xs -mt-2"><span class="text-slate-500 mr-2"><i class="fa-solid fa-clipboard-check"></i> 현장 확인</span>${line}${isRO(s) ? '' : `<button type="button" onclick="openSeatImport('${esc(s.id)}')" class="ml-1 text-ewelfare-700 font-semibold underline"><i class="fa-solid fa-chair"></i> 좌석배치표 불러오기${(n => n ? ` (${n}명 적용됨)` : '')(appsAll.reduce((x, a) => x + Object.keys(a.pInfo || {}).length, 0))}</button>`}</div>`); }
   const TH = (t, c = '') => `<th class="p-3 whitespace-nowrap ${c}">${t}</th>`;
   $('#admin-thead').innerHTML = `<tr>${TH('No', 'w-10 text-center')}${TH('신청자')}${FACS.length ? TH('시설') : ''}${TH('구분')}${TH('프로그램 / 보호자')}${TH('신청 항목·수량')}${TH('금액', 'text-right')}${FUND ? TH('지출 재원', 'text-center') : ''}${DEP ? TH('입금자명', 'text-center') + TH('입금 확인', 'text-center') : ''}${TH('수령', 'text-center')}${TH('관리', 'text-center')}</tr>`;
   const fsel = $('#admin-filter-status');
@@ -3983,12 +3983,12 @@ function renderCheckin(s) {
     const head = byOrg && orgOf(a) !== lastOrg ? `<p class="pt-2 text-xs font-bold text-ewelfare-800">${esc((lastOrg = orgOf(a)) || '(기관 미기재)')} <span class="font-normal text-slate-400">${hits.filter(x => orgOf(x) === orgOf(a)).reduce((n, x) => n + appPeople(s, x).length, 0)}명</span></p>` : '';
     const p = piiOf(a), mine = ckAppSess(s, a), ok = sessPeople(s, a, sess).length > 0, MK = ckMarks(s, sess), org = (p.ext || {})[(s.fields || []).find(f => /소속/.test(f.label || ''))?.id] || '';
     return `${head}<div class="border border-slate-200 rounded-lg bg-slate-50 p-3 space-y-2 text-sm">
-      <div class="flex flex-wrap items-center gap-2"><b class="text-slate-900">${esc(nmShow(p.name))}</b>${a.userType && a.userType !== '이용자' ? `<span class="text-[11px] px-1.5 rounded bg-violet-100 text-violet-800">${esc(a.userType)}</span>` : ''}${p.phone ? `<span class="text-slate-500 text-xs">(…${esc(String(p.phone).replace(/\D/g, '').slice(-4))})</span>` : ''}${org ? `<span class="text-xs text-slate-500">${esc(org)}</span>` : ''}
+      <div class="flex flex-wrap items-center gap-2"><b class="text-slate-900 whitespace-nowrap">${esc(nmShow(p.name))}</b>${a.userType && a.userType !== '이용자' ? `<span class="text-[11px] px-1.5 rounded bg-violet-100 text-violet-800">${esc(a.userType)}</span>` : ''}${p.phone ? `<span class="text-slate-500 text-xs">(…${esc(String(p.phone).replace(/\D/g, '').slice(-4))})</span>` : ''}${org ? `<span class="text-xs text-slate-500" style="word-break:keep-all">${esc(org)}</span>` : ''}
         ${SS.length > 1 ? `<span class="text-[11px] ${ok ? 'text-emerald-700' : 'text-amber-700 font-bold'}">${ok ? '' : '이 행사 신청 없음 · '}신청: ${esc(mine.join(', ') || '-')}</span>` : ''}</div>
       ${appPeople(s, a).map((x, idx) => { if (ok && !personSess(s, a, idx).includes(sess)) return ''; const c = a.ck?.[sess]?.[idx];
         const st = seatFor(s, a, idx, sess), tt = titleFor(s, a, idx);
-        return `<div class="flex flex-wrap items-center gap-2 bg-white border border-slate-200 rounded-md px-2 py-1.5"><span class="flex-1 min-w-0">${x.lead ? '' : '<span class="text-[11px] text-slate-400 mr-1">동반</span>'}${x.name ? esc(nmShow(x.name)) : '<span class="text-slate-400">(성함 미기재)</span>'}${tt ? ` <span class="text-xs text-slate-500">${esc(tt)}</span>` : ''}</span>${st ? `<span class="px-2 py-1 rounded-md text-sm font-black text-white" style="background:#047857">${esc(st)}</span>` : ''}
-          ${mkFor(s, a, idx, sess).map(m => `<label class="text-xs flex items-center gap-1 px-2 py-1 rounded border ${a.mk?.[m.id]?.[idx] ? 'bg-sky-50 border-sky-300 text-sky-800' : 'border-slate-200 text-slate-600'}"><input type="checkbox" ${a.mk?.[m.id]?.[idx] ? 'checked' : ''} onchange="ckToggleMark('${esc(a.id)}','${esc(m.id)}',${idx},this.checked)"> ${esc(m.label)}${m.num && a.mk?.[m.id]?.[idx]?.no ? ` <b>${esc(mkNoText(m, a.mk[m.id][idx]))}</b>` : ''}${a.mk?.[m.id]?.[idx]?.opt ? ` <b>${esc(a.mk[m.id][idx].opt)}</b>` : ''}${m.ifField && m.walkIn && mkPre(a, m) && !a.mk?.[m.id]?.[idx] ? ` <span class="px-1 rounded text-amber-900 font-bold" style="background:#fde68a">사전신청${(v => v ? ' · ' + esc(v) : '')(mkPrefer(s, a, idx, m))}</span>` : ''}</label>`).join('')}
+        return `<div class="flex flex-wrap items-center gap-2 bg-white border border-slate-200 rounded-md px-2 py-1.5"><span class="min-w-0" style="flex:1 1 9rem;word-break:keep-all">${x.lead ? '' : '<span class="text-[11px] text-slate-400 mr-1">동반</span>'}${x.name ? `<span class="whitespace-nowrap">${esc(nmShow(x.name))}</span>` : '<span class="text-slate-400 whitespace-nowrap">(성함 미기재)</span>'}${tt ? ` <span class="text-xs text-slate-500">${esc(tt)}</span>` : ''}</span>${st ? `<span class="px-2 py-1 rounded-md text-sm font-black text-white whitespace-nowrap" style="background:#047857">${esc(st)}</span>` : ''}
+          ${mkFor(s, a, idx, sess).map(m => `<label class="text-xs flex items-center gap-1 px-2 py-1 rounded border whitespace-nowrap ${a.mk?.[m.id]?.[idx] ? 'bg-sky-50 border-sky-300 text-sky-800' : 'border-slate-200 text-slate-600'}"><input type="checkbox" ${a.mk?.[m.id]?.[idx] ? 'checked' : ''} onchange="ckToggleMark('${esc(a.id)}','${esc(m.id)}',${idx},this.checked)"> ${esc(m.label)}${m.num && a.mk?.[m.id]?.[idx]?.no ? ` <b>${esc(mkNoText(m, a.mk[m.id][idx]))}</b>` : ''}${a.mk?.[m.id]?.[idx]?.opt ? ` <b>${esc(a.mk[m.id][idx].opt)}</b>` : ''}${m.ifField && m.walkIn && mkPre(a, m) && !a.mk?.[m.id]?.[idx] ? ` <span class="px-1 rounded text-amber-900 font-bold" style="background:#fde68a">사전신청${(v => v ? ' · ' + esc(v) : '')(mkPrefer(s, a, idx, m))}</span>` : ''}</label>`).join('')}
           ${NS ? (c ? `<button type="button" onclick="ckCheck('${esc(a.id)}',${idx},false)" class="px-3 py-1.5 rounded-md bg-emerald-100 text-emerald-800 text-xs font-bold" title="누르면 체크 취소"><i class="fa-solid fa-circle-check"></i> 참석 ${esc(String(c.at || '').slice(11))}</button>` : `<button type="button" onclick="ckCheck('${esc(a.id)}',${idx},true)" class="px-4 py-1.5 rounded-md bg-ewelfare-900 text-white text-xs font-bold">참석 체크</button>`) : c ? (c.sig ? `<span class="text-xs font-bold text-emerald-700"><i class="fa-solid fa-circle-check"></i> 서명 ${esc(String(c.at || '').slice(11))}</span>` : `<button type="button" onclick="ckCheck('${esc(a.id)}',${idx},false)" class="px-3 py-1.5 rounded-md bg-emerald-100 text-emerald-800 text-xs font-bold" title="누르면 체크 취소"><i class="fa-solid fa-circle-check"></i> 참석(서명 생략) ${esc(String(c.at || '').slice(11))}</button>`) : `${s.checkin?.staffOk !== false ? `<button type="button" onclick="ckCheck('${esc(a.id)}',${idx},true,1)" class="px-2 py-1.5 rounded-md border border-slate-300 bg-white text-slate-600 text-xs" title="내빈 등 서명을 받지 않는 분">서명 생략</button>` : ''}<button type="button" onclick="ckStart('${esc(a.id)}',${idx})" class="px-3 py-1.5 rounded-md bg-emerald-700 text-white text-xs font-bold"><i class="fa-solid fa-pen-nib"></i> 서명</button>`}</div>`; }).join('')}
     </div>`;
   }).join('');
@@ -4133,11 +4133,13 @@ const pInf = (a, i) => a?.pInfo?.[i] || null;
 const seatText = v => { v = String(v || '').trim(); return !v ? '' : /^\d+$/.test(v) ? `${v}번 테이블` : v === 'H' ? 'H (VIP) 테이블' : v === '배석' ? '배석 좌석' : v === '대기' ? '대기 장소' : v === '없음' ? '좌석 없음 (직원)' : v; };
 const seatFor = (s, a, i, sess) => { const v = pInf(a, i)?.seat; const only = s?.checkin?.seatSess; return v && (!only || only === sess) ? seatText(v) : ''; };
 const titleFor = (s, a, i) => pInf(a, i)?.title || (i === 0 ? String((piiOf(a)?.ext || {})[(s.fields || []).find(f => /직위|직책/.test(f.label || ''))?.id] || '') : '');
-const mkPre = (a, m, i = 0) => !!m.ifField && (!!pInf(a, i)?.park || !!(v => Array.isArray(v) ? v.length : v && v !== '아니오')(piiOf(a)?.ext?.[m.ifField]));
+const ansYes = v => Array.isArray(v) ? v.some(ansYes) : !!v && !/^(아니오|아니요|없음|해당\s*없음|불필요|필요\s*없음|미신청)$/.test(String(v).trim());
+const mkPre = (a, m, i = 0) => !!m.ifField && (!!pInf(a, i)?.park || ansYes(piiOf(a)?.ext?.[m.ifField]));
 /** m.walkIn = 사전신청 안 한 분도 현장에서 체크(현장 신청) · m.opts = ['2시간권', …] 체크할 때 고름 */
 const mkFor = (s, a, idx, sess) => ckMarks(s, sess).filter(m => (!m.leadOnly || idx === 0 || (m.ifField && pInf(a, idx)?.park)) && (!m.ifField || m.walkIn || mkPre(a, m, idx)));
 /** m.prefer = '기념식=2시간권; 기념식+현장연구발표회=종일권' → 그 구분만 참석하는 사람에게 먼저 권할 것 */
-const mkPrefer = (s, a, idx, m) => { if (m.ifField && (m.opts || []).includes(pInf(a, idx)?.park)) return pInf(a, idx).park; const k = [...personSess(s, a, idx)].sort().join('+'); for (const r of String(m.prefer || '').split(/[;\n]/)) { const [x, o] = r.split('=').map(v => (v || '').trim()); if (x && o && (m.opts || []).includes(o) && x.split('+').map(v => v.trim()).sort().join('+') === k) return o; } return ''; };
+const mkPrefer = (s, a, idx, m) => { if (m.ifField && (m.opts || []).includes(pInf(a, idx)?.park)) return pInf(a, idx).park;
+  if (m.ifField && idx === 0) { const v = piiOf(a)?.ext?.[m.ifField], hit = (Array.isArray(v) ? v : [v]).find(x => (m.opts || []).includes(String(x || '').trim())); if (hit) return String(hit).trim(); }  /* 신청서에서 고른 시간권 */ const k = [...personSess(s, a, idx)].sort().join('+'); for (const r of String(m.prefer || '').split(/[;\n]/)) { const [x, o] = r.split('=').map(v => (v || '').trim()); if (x && o && (m.opts || []).includes(o) && x.split('+').map(v => v.trim()).sort().join('+') === k) return o; } return ''; };
 const mkPick = (m, who, cancelText = '취소', pref = '', head = '') => (m.opts || []).length ? UI.dialog({ title: m.label, hideOk: true, cancelText,
   html: `${head}<p class="text-center font-bold mb-3">${esc(who)}</p>${pref ? `<button type="button" data-pk="${esc(pref)}" class="w-full py-5 mb-2 rounded-lg bg-ewelfare-900 text-white text-xl font-black">${esc(pref)} <span class="text-sm font-normal">(우선)</span></button>` : ''}<div style="display:grid;grid-template-columns:repeat(${Math.min(3, m.opts.length - (pref ? 1 : 0)) || 1},1fr);gap:.5rem">${m.opts.filter(o => o !== pref).map(o => `<button type="button" data-pk="${esc(o)}" class="${pref ? 'py-3 rounded-lg border border-slate-300 bg-white text-slate-700 text-sm font-bold' : 'py-4 rounded-lg bg-ewelfare-900 text-white text-base font-bold'}">${esc(o)}</button>`).join('')}</div>`,
   onOpen: (b, api) => b.querySelectorAll('[data-pk]').forEach(x => x.onclick = () => api.close(x.dataset.pk)) })
@@ -5200,6 +5202,69 @@ function autoKioskApply() {
   const s = curSvc(); if (s && !ckOn(s) && openRoundNow(s)) kioskApply();
 }
 /** 현장 확인 서비스: 구분(예: 기념식·발표회)마다 태블릿 바로가기 — 열면 그 구분이 미리 골라져 있음 */
+/* ---------- 좌석배치표(엑셀) 불러오기: 사람마다 테이블·직함·주차권을 a.pInfo[사람번호]에 저장 ----------
+   머리줄에서 '성명/이름', '테이블/좌석', '기관/소속/단체', '직함/직위/직책', '주차' 칸을 찾고, 병합된 테이블 칸은 위 값을 이어 씀.
+   이름(+기관)으로 신청 명단의 사람(동반자 포함)과 맞추고, 못 맞춘 줄은 직접 고르게 함 */
+const seatNorm = v => { v = String(v ?? '').replace(/\s+/g, ' ').trim(); const m = v.match(/^(\d{1,3})(?!\d)/); if (m) return m[1]; return v.replace(/^\((.*)\)$/, '$1').trim(); };
+const pnNorm = v => String(v || '').replace(/\(.*?\)|\s/g, '').replace(/(님|선생님|관장님|센터장님|교수님)$/, '');
+const orgNorm = v => String(v || '').replace(/\s|\(.*?\)|㈜|\(주\)|주식회사/g, '');
+const orgSim = (a, b) => { a = orgNorm(a); b = orgNorm(b); if (!a || !b) return 0; for (let L = Math.min(a.length, b.length); L >= 2; L--) for (let i = 0; i + L <= a.length; i++) if (b.includes(a.slice(i, i + L))) return L; return 0; };
+function seatParse(aoa, opts) {
+  const hi = aoa.findIndex(r => r.some(c => /^(성명|이름|성함)$/.test(String(c).trim()))); if (hi < 0) throw new Error("머리줄에 '성명' 또는 '이름' 칸이 없습니다.");
+  const H = aoa[hi].map(c => String(c).replace(/\s/g, '')), col = re => H.findIndex(h => re.test(h));
+  const C = { name: col(/^(성명|이름|성함)$/), seat: col(/테이블|좌석|자리/), org: col(/기관|소속|단체/), title: col(/직함|직위|직책/), park: (i => i >= 0 ? i : col(/주차/))(col(/주차.*종류/)) };
+  if (C.seat < 0 && C.title < 0 && C.park < 0) throw new Error("'테이블(좌석)', '직함', '주차' 칸 중 하나는 있어야 합니다.");
+  const out = []; let seat = '';
+  aoa.slice(hi + 1).forEach(r => { const g = i => i >= 0 ? String(r[i] ?? '').trim() : ''; if (g(C.seat)) seat = seatNorm(g(C.seat));
+    const name = g(C.name).replace(/\s+/g, ' '); if (!name || /^(추가\s*예정|공석|미정|-)$/.test(name)) return;
+    const pk = g(C.park), park = (opts.find(o => pk.replace(/\s/g, '').includes(o.replace(/\s/g, ''))) || (pk.match(/\d+\s*시간권|종일권/) || [''])[0].replace(/\s/g, ''));
+    const title = g(C.title).replace(/^[-–]$/, '');
+    out.push({ seat, name, org: g(C.org), title, park }); });
+  return { rows: out, cols: C, head: aoa[hi] };
+}
+async function openSeatImport(sid) {
+  const s = findSvc(DB, sid) || curSvc(); if (!s || roBlock()) return;
+  await wrap(() => loadLib('xlsx'));
+  const apps = ckRounds(s).flatMap(r => roundApps(r)).filter(a => !a.isPurged && piiOf(a));
+  const orgF = (s.fields || []).find(f => /소속|기관/.test(f.label || ''));
+  const P = []; apps.forEach(a => { const org = String((piiOf(a)?.ext || {})[orgF?.id] || ''); appPeople(s, a).forEach((x, i) => P.push({ a, i, name: x.name || '', n: pnNorm(x.name), org, key: a.id + '#' + i })); });
+  const opts = [...new Set((s.checkin?.marks || []).flatMap(m => m.opts || []))];
+  const SS = ckSessions(s, apps);
+  let parsed = null, pick = {};   // pick[행번호] = 'aid#i' | '' (건너뜀)
+  const match = rows => { const used = new Set(), res = rows.map(() => []);
+    rows.forEach((r, k) => { const n = pnNorm(r.name); let c = P.filter(p => p.n && p.n === n);
+      if (!c.length) c = P.filter(p => p.n && n.length >= 2 && (p.n.startsWith(n) || n.startsWith(p.n)) && Math.min(p.n.length, n.length) >= 2);
+      if (c.length > 1) { const best = Math.max(...c.map(p => orgSim(r.org, p.org))); const c2 = c.filter(p => orgSim(r.org, p.org) === best); const same = new Set(c2.map(p => p.n)).size === 1 && rows.filter(x => pnNorm(x.name) === n).length === 1; c = same ? c2 : c2.filter(p => !used.has(p.key)).slice(0, 1); }
+      c.forEach(p => used.add(p.key)); res[k] = c; });
+    return res; };
+  const render = b => { const out = b.querySelector('[data-out]'); if (!parsed) { out.innerHTML = ''; return; }
+    const M = match(parsed.rows), un = parsed.rows.map((r, k) => ({ r, k })).filter(x => !M[x.k].length), usedKeys = new Set(M.flat().map(p => p.key)), free = P.filter(p => !usedKeys.has(p.key));
+    const nameOf = p => `${p.name || '(성함 미기재)'}${p.i ? ' (동반)' : ''} · ${p.org || ''}`;
+    out.innerHTML = `<p class="mt-2"><b class="text-emerald-700">${parsed.rows.length - un.length}</b>명 자동 연결 · 못 맞춘 줄 <b class="${un.length ? 'text-rose-600' : ''}">${un.length}</b> · 표에 없는 신청자 ${free.length}명</p>
+      ${un.length ? `<div class="mt-2 border rounded-lg divide-y max-h-64 overflow-y-auto">${un.map(({ r, k }) => `<div class="flex flex-wrap items-center gap-2 p-2"><span class="flex-1" style="min-width:10rem"><b>${esc(r.name)}</b> <span class="text-slate-500">${esc(r.org)} · ${esc(seatText(r.seat) || '-')}</span></span><select data-pick="${k}" class="qf-in !w-auto"><option value="">건너뛰기</option>${free.map(p => `<option value="${esc(p.key)}" ${pick[k] === p.key ? 'selected' : ''}>${esc(nameOf(p))}</option>`).join('')}</select></div>`).join('')}</div>` : ''}
+      ${free.length ? `<details class="mt-2"><summary class="cursor-pointer text-slate-500">표에 없는 신청자 ${free.length}명 보기</summary><p class="mt-1 text-slate-600 leading-relaxed">${free.map(p => esc(nameOf(p))).join(', ')}</p></details>` : ''}`;
+    out.querySelectorAll('[data-pick]').forEach(sel => sel.onchange = () => { pick[sel.dataset.pick] = sel.value; });
+    b._M = M; };
+  await UI.dialog({ title: '<i class="fa-solid fa-chair mr-1"></i> 좌석배치표 불러오기', wide: true, okText: '명단에 적용',
+    html: `<div class="space-y-2 text-xs"><p>엑셀 머리줄에 <b>성명</b>과 <b>테이블(좌석)·직함·주차권 종류</b> 칸이 있으면 됩니다. 기관 칸이 있으면 동명이인을 구분합니다. 병합된 테이블 칸도 읽습니다.</p>
+      <input type="file" data-f accept=".xlsx,.xls,.csv" class="qf-in">
+      <label class="block">좌석을 안내할 구분 <select data-ss class="qf-in !w-auto ml-1"><option value="">모든 구분</option>${SS.filter(Boolean).map(v => `<option ${v === s.checkin?.seatSess ? 'selected' : ''}>${esc(v)}</option>`).join('')}</select></label>
+      <label class="flex items-center gap-2"><input type="checkbox" data-clr checked> 이전에 불러온 좌석·직함·주차권은 지우고 새로 적용</label>
+      <div data-out></div></div>`,
+    onOpen(b) { b.querySelector('[data-f]').onchange = async e => { const f = e.target.files[0]; if (!f) return; const out = b.querySelector('[data-out]');
+      try { const wb = XLSX.read(await f.arrayBuffer(), { type: 'array' }); let err = null;
+        for (const nm of wb.SheetNames) { try { parsed = seatParse(XLSX.utils.sheet_to_json(wb.Sheets[nm], { header: 1, raw: false, defval: '' }), opts); if (parsed.rows.length) break; } catch (x) { err = x; parsed = null; } }
+        if (!parsed) throw err || new Error('읽을 줄이 없습니다.'); pick = {}; render(b); }
+      catch (x) { parsed = null; out.innerHTML = `<p class="text-rose-600">${esc(x.message || String(x))}</p>`; } }; },
+    async collect(b) {
+      if (!parsed) throw new Error('엑셀 파일을 고르세요.');
+      const M = b._M, set = {}; parsed.rows.forEach((r, k) => { const ps = M[k].length ? M[k] : pick[k] ? P.filter(p => p.key === pick[k]) : []; ps.forEach(p => { (set[p.a.id] ||= {})[p.i] = { ...(r.seat ? { seat: r.seat } : {}), ...(r.title ? { title: r.title } : {}), ...(r.park ? { park: r.park } : {}) }; }); });
+      const clr = b.querySelector('[data-clr]').checked, ss = b.querySelector('[data-ss]').value, ids = new Set(apps.map(a => a.id)), n = Object.values(set).reduce((x, o) => x + Object.keys(o).length, 0);
+      if (!n) throw new Error('연결된 사람이 없습니다.');
+      await mutateMain(d => { d.applications.forEach(a => { if (!ids.has(a.id)) return; if (clr) delete a.pInfo; if (set[a.id]) a.pInfo = { ...(a.pInfo || {}), ...set[a.id] }; });
+        const sv = findSvc(d, s.id); if (sv) { sv.checkin ||= {}; sv.checkin.seatSess = ss; } return true; });
+      UI.toast(`${n}명에게 좌석·직함을 적용했습니다.`); return true; } });
+}
 async function openCheckinShortcuts(s) {
   await wrap(() => loadLib('qrcode'));
   const SS = ckSessions(s, ckRounds(s).flatMap(r => roundApps(r))), short = s.name.replace(/\s*(참가\s*신청|참석\s*신청|신청)$/, '');
