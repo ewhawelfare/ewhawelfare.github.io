@@ -454,7 +454,7 @@ const APP_NAME = 'QuickForm';
 /** SharePoint 문서 라이브러리 안의 저장 폴더 기본값. 기관마다 배포 링크에 &folder=경로 로 바꿀 수 있음 */
 const DATA_FOLDER = 'QuickFormData';
 const LEGACY_FOLDERS = ['EWelfareData/QuickForm'];   // 예전 기본값 — 이미 쓰던 기관은 자동으로 이어서 씀
-const APP_VERSION = 'QF-5.11.4 · 11-17 10:00';
+const APP_VERSION = 'QF-5.11.5 · 11-17 11:00';
 const GRAPH = 'https://graph.microsoft.com/v1.0';
 /** 권한 범위: 기본 Sites.ReadWrite.All, 배포 링크에 &perm=selected 면 Sites.Selected(지정한 사이트만) */
 const scopeStr = () => `openid profile email offline_access https://graph.microsoft.com/${Infra.cfg.permSelected ? 'Sites.Selected' : 'Sites.ReadWrite.All'}`;
@@ -3781,6 +3781,7 @@ function renderKioskCta(s) {
 function renderKioskResults() {
   const s = curSvc();
   { const bar = $('#kiosk-admin-bar'); if (bar) { bar.classList.toggle('hidden', MODE === 'kiosk'); const l = $('#lnk-kiosk-open'); if (l && s) l.href = `${location.pathname}?mode=kiosk&s=${encodeURIComponent(s.id)}`; } }
+  if (!ckOn(s)) $('#kiosk-search-input').placeholder = '성함 전체 또는 전화번호 뒤 4자리';
   { const cb = $('#kiosk-ck-bar'); if (cb && !ckOn(s)) cb.remove(); const bd = $('#kiosk-card .rounded-full'); if (bd?.dataset.orig && !ckOn(s)) bd.innerHTML = bd.dataset.orig; }
   if (ckOn(s)) return renderCheckin(s);
   renderKioskCta(s);
@@ -3925,20 +3926,29 @@ function renderCheckin(s) {
   if (KCK) return;
   const box = $('#kiosk-search-results');
   const q = $('#kiosk-search-input').value.trim(), qn = norm(q), qd = q.replace(/\D/g, '');
-  const NS = ckNoSig(s, sess), todo = NS && LS.get('qf:cktodo') === '1'; box.style.maxHeight = NS ? 'none' : '';
+  $('#kiosk-search-input').placeholder = '성함·기관명 또는 전화번호 뒤 4자리';
+  const NS = ckNoSig(s, sess), todo = NS && LS.get('qf:cktodo') === '1', all = NS || LS.get('qf:ckall') === '1', byOrg = LS.get('qf:cksort') === 'org';
+  box.style.maxHeight = all ? 'none' : '';
+  const orgF = (s.fields || []).find(f => /소속|기관/.test(f.label || '')), orgOf = a => String((piiOf(a)?.ext || {})[orgF?.id] || '').trim();
+  // 보기: 전체 명단 · 기관순/성명순 (직원이 보는 화면)
+  bar.insertAdjacentHTML('beforeend', `<div class="flex flex-wrap items-center justify-center gap-2 text-xs">${NS ? '' : `<label class="flex items-center gap-1"><input type="checkbox" id="kiosk-ck-all" ${all ? 'checked' : ''}> 전체 명단</label>`}<span class="inline-flex rounded border border-slate-300 overflow-hidden">${[['name', '성명순'], ['org', '기관순']].map(([k, t]) => `<button type="button" data-cksort="${k}" class="px-2 py-1 ${(byOrg ? 'org' : 'name') === k ? 'bg-ewelfare-900 text-white' : 'bg-white text-slate-600'}">${t}</button>`).join('')}</span></div>`);
+  { const ca = $('#kiosk-ck-all'); if (ca) ca.onchange = () => { LS.set('qf:ckall', ca.checked ? '1' : ''); renderKioskResults(); }; bar.querySelectorAll('[data-cksort]').forEach(b => b.onclick = () => { LS.set('qf:cksort', b.dataset.cksort === 'org' ? 'org' : ''); renderKioskResults(); }); }
+  const cmp = (a, b) => (byOrg ? orgOf(a).localeCompare(orgOf(b), 'ko') || 0 : 0) || String(piiOf(a)?.name || '').localeCompare(String(piiOf(b)?.name || ''), 'ko');
   let hits;
-  if (qn.length < 2 && qd.length < 4) {
-    if (!NS) { box.innerHTML = `<p class="text-xs text-slate-400 text-center py-3">${pending.length ? '<i class="fa-solid fa-circle-notch spin"></i> 불러오는 중… ' : ''}성함 전체(동반자 성함도 됩니다) 또는 전화번호 뒤 4자리를 입력하세요.</p>`; return; }
-    // 직원 체크 구분: 검색 없이 그 구분 신청자 전체 (가나다순)
-    hits = apps.filter(a => piiOf(a) && ckAppSess(s, a).includes(sess)).sort((a, b) => String(piiOf(a).name).localeCompare(String(piiOf(b).name), 'ko'));
+  if (qn.length < 1 && qd.length < 4) {
+    if (!all) { box.innerHTML = `<p class="text-xs text-slate-400 text-center py-3">${pending.length ? '<i class="fa-solid fa-circle-notch spin"></i> 불러오는 중… ' : ''}성함·기관명(일부도 됩니다) 또는 전화번호 뒤 4자리를 입력하세요.</p>`; return; }
+    hits = apps.filter(a => piiOf(a) && ckAppSess(s, a).includes(sess));
     if (todo) hits = hits.filter(a => appPeople(s, a).some((x, i) => !a.ck?.[sess]?.[i]));
   } else hits = apps.filter(a => { const p = piiOf(a); if (!p) return false; const ph = String(p.phone || '').replace(/\D/g, '');
-    return (NS && qn.length >= 1 && (appPeople(s, a).some(x => x.name && norm(x.name).includes(qn)) || norm((p.ext || {})[(s.fields || []).find(f => /소속/.test(f.label || ''))?.id] || '').includes(qn))) || (qn.length >= 2 && appPeople(s, a).some(x => x.name && norm(x.name) === qn)) || (qd.length === 4 && ph.endsWith(qd)); }).slice(0, NS ? 40 : 6);
-  if (!hits.length) { box.innerHTML = `<p class="text-xs text-slate-400 text-center py-3">${pending.length ? '<i class="fa-solid fa-circle-notch spin"></i> 불러오는 중…' : '찾지 못했습니다. 성함을 빠짐없이 입력해 주세요.'}</p>`; return; }
-  const nmShow = n => NS ? n : maskNameAlways(n);   // 직원이 체크하는 화면은 실명
+    return (qn.length >= 1 && (appPeople(s, a).some(x => x.name && norm(x.name).includes(qn)) || norm(orgOf(a)).includes(qn))) || (qd.length === 4 && ph.endsWith(qd)); });
+  hits = hits.sort(cmp).slice(0, all ? 400 : 40);
+  if (!hits.length) { box.innerHTML = `<p class="text-xs text-slate-400 text-center py-3">${pending.length ? '<i class="fa-solid fa-circle-notch spin"></i> 불러오는 중…' : '찾지 못했습니다.'}</p>`; return; }
+  const nmShow = n => n;   // 참석 확인은 직원이 보는 화면: 실명
+  let lastOrg = null;
   box.innerHTML = hits.map(a => {
+    const head = byOrg && orgOf(a) !== lastOrg ? `<p class="pt-2 text-xs font-bold text-ewelfare-800">${esc((lastOrg = orgOf(a)) || '(기관 미기재)')} <span class="font-normal text-slate-400">${hits.filter(x => orgOf(x) === orgOf(a)).reduce((n, x) => n + appPeople(s, x).length, 0)}명</span></p>` : '';
     const p = piiOf(a), mine = ckAppSess(s, a), ok = mine.includes(sess), MK = ckMarks(s, sess), org = (p.ext || {})[(s.fields || []).find(f => /소속/.test(f.label || ''))?.id] || '';
-    return `<div class="border border-slate-200 rounded-lg bg-slate-50 p-3 space-y-2 text-sm">
+    return `${head}<div class="border border-slate-200 rounded-lg bg-slate-50 p-3 space-y-2 text-sm">
       <div class="flex flex-wrap items-center gap-2"><b class="text-slate-900">${esc(nmShow(p.name))}</b>${a.userType && a.userType !== '이용자' ? `<span class="text-[11px] px-1.5 rounded bg-violet-100 text-violet-800">${esc(a.userType)}</span>` : ''}${p.phone ? `<span class="text-slate-500 text-xs">(…${esc(String(p.phone).replace(/\D/g, '').slice(-4))})</span>` : ''}${org ? `<span class="text-xs text-slate-500">${esc(org)}</span>` : ''}
         ${SS.length > 1 ? `<span class="text-[11px] ${ok ? 'text-emerald-700' : 'text-amber-700 font-bold'}">${ok ? '' : '이 행사 신청 없음 · '}신청: ${esc(mine.join(', ') || '-')}</span>` : ''}</div>
       ${appPeople(s, a).map((x, idx) => { const c = a.ck?.[sess]?.[idx];
