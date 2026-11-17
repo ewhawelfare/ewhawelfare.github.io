@@ -454,7 +454,7 @@ const APP_NAME = 'QuickForm';
 /** SharePoint 문서 라이브러리 안의 저장 폴더 기본값. 기관마다 배포 링크에 &folder=경로 로 바꿀 수 있음 */
 const DATA_FOLDER = 'QuickFormData';
 const LEGACY_FOLDERS = ['EWelfareData/QuickForm'];   // 예전 기본값 — 이미 쓰던 기관은 자동으로 이어서 씀
-const APP_VERSION = 'QF-5.11.3 · 11-16 17:30';
+const APP_VERSION = 'QF-5.11.4 · 11-17 10:00';
 const GRAPH = 'https://graph.microsoft.com/v1.0';
 /** 권한 범위: 기본 Sites.ReadWrite.All, 배포 링크에 &perm=selected 면 Sites.Selected(지정한 사이트만) */
 const scopeStr = () => `openid profile email offline_access https://graph.microsoft.com/${Infra.cfg.permSelected ? 'Sites.Selected' : 'Sites.ReadWrite.All'}`;
@@ -3908,7 +3908,9 @@ function renderCheckin(s) {
   const rounds = ckRounds(s), apps = rounds.flatMap(r => roundApps(r)).filter(a => !a.isPurged);
   const pending = rounds.filter(r => !PII[r.id]?.loaded);
   pending.forEach(r => { if (_kLoading.has(r.id)) return; _kLoading.add(r.id); loadPii(r.id).catch(() => { }).finally(() => { _kLoading.delete(r.id); if (VIEW.tab === 'kiosk') renderKioskResults(); }); });
-  const SS = ckSessions(s, apps), sess = ckDevSess(s, SS);
+  const SS = ckSessions(s, apps);
+  { const pq = new URLSearchParams(location.search).get('ck'); if (pq && SS.includes(pq) && !renderCheckin._q) { renderCheckin._q = 1; LS.set('qf:ck:' + s.id, pq); } }
+  const sess = ckDevSess(s, SS);
   $('#kiosk-apply-cta').innerHTML = '';
   $('#kiosk-title').textContent = `${s.name.replace(/\s*(참가\s*신청|참석\s*신청|신청)$/, '')} 참석 확인`;
   { const bd = $('#kiosk-card .rounded-full'); if (bd) { bd.dataset.orig ??= bd.innerHTML; bd.innerHTML = '<i class="fa-solid fa-clipboard-check mr-1"></i> 현장 참석 확인'; } }
@@ -5115,7 +5117,20 @@ function setShortcutLook(label) {
 /** 신청 바로가기 화면: 신청서를 늘 열어 둠 (서명 중이거나 신청 기간이 아니면 쉼) */
 function autoKioskApply() {
   if (KSCREEN !== 'apply' || VIEW.tab !== 'kiosk' || document.getElementById('kiosk-apply') || kioskAppId || document.querySelector('.qf-dialog')) return;
-  const s = curSvc(); if (s && openRoundNow(s)) kioskApply();
+  const s = curSvc(); if (s && !ckOn(s) && openRoundNow(s)) kioskApply();
+}
+/** 현장 확인 서비스: 구분(예: 기념식·발표회)마다 태블릿 바로가기 — 열면 그 구분이 미리 골라져 있음 */
+async function openCheckinShortcuts(s) {
+  await wrap(() => loadLib('qrcode'));
+  const SS = ckSessions(s, ckRounds(s).flatMap(r => roundApps(r))), short = s.name.replace(/\s*(참가\s*신청|참석\s*신청|신청)$/, '');
+  const link = v => Infra.deployLink(`&mode=kiosk&k=sign&s=${encodeURIComponent(s.id)}${v ? '&ck=' + encodeURIComponent(v) : ''}`);
+  await UI.dialog({
+    title: `<i class="fa-solid fa-mobile-screen mr-1"></i> 태블릿 바로가기 — ${esc(short)} 참석 확인`, wide: true, cancelText: '닫기', hideOk: true,
+    html: `<div class="space-y-3 text-xs"><p>태블릿 카메라로 <b>맡을 행사의 QR</b>을 찍어 열고, 태블릿 계정으로 로그인한 뒤 <b>홈 화면에 추가</b>하세요. 열면 그 행사가 미리 골라져 있습니다.</p>
+      <div class="grid sm:grid-cols-${Math.min(3, SS.length)} gap-4">${SS.map((v, i) => `<div class="text-center space-y-2 border rounded-lg p-3"><p class="font-bold text-sm">${esc(v || short)} ${ckNoSig(s, v) ? '<span class="font-normal text-slate-500">(직원 체크)</span>' : '<span class="font-normal text-slate-500">(서명)</span>'}</p><div data-qr="${i}" class="inline-block bg-white p-2 border rounded"></div><div class="flex gap-1 justify-center"><button type="button" data-cp="${i}" class="qf-btn bg-white border"><i class="fa-regular fa-copy"></i> 주소 복사</button><a href="${esc(link(v))}" target="_blank" rel="noopener" class="qf-btn bg-white border">열기</a></div></div>`).join('')}</div>
+      <div class="bg-slate-50 border rounded-lg p-2 leading-relaxed">• <b>iPad</b>: Safari로 연 뒤 공유(□↑) → <b>홈 화면에 추가</b><br>• <b>갤럭시탭</b>: Chrome으로 연 뒤 ⋮ → <b>홈 화면에 추가</b><br>• 로그인은 하루쯤 유지됩니다. 행사 당일 아침 한 번 열어 확인하세요.</div></div>`,
+    onOpen(b) { SS.forEach((v, i) => { new window.QRCode(b.querySelector(`[data-qr="${i}"]`), { text: link(v), width: 200, height: 200, correctLevel: window.QRCode.CorrectLevel.L }); b.querySelector(`[data-cp="${i}"]`).onclick = () => copyText(link(v), '주소를 복사했습니다.'); }); }
+  });
 }
 async function openKioskShortcuts() {
   const s = curSvc(); if (!s) return;
@@ -5124,6 +5139,7 @@ async function openKioskShortcuts() {
   // 설정값(tid·cid·sp)이 든 주소 — 처음 쓰는 태블릿·다른 브라우저에서도 바로 열림. QR은 크게 그려 카메라가 잘 읽게
   const link = k => Infra.deployLink(`&mode=kiosk&k=${k}&s=${encodeURIComponent(s.id)}`);
   const short = s.name.replace(/\s*신청$/, '');
+  if (ckOn(s)) return openCheckinShortcuts(s);
   await UI.dialog({
     title: `<i class="fa-solid fa-mobile-screen mr-1"></i> 태블릿 바로가기 — ${esc(short)}`, wide: true, cancelText: '닫기', hideOk: true,
     html: `<div class="space-y-3 text-xs">
