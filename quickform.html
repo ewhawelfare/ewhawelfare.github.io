@@ -367,6 +367,7 @@ body{word-break:keep-all;overflow-wrap:anywhere}
             <div class="space-y-1 md:col-span-2"><span class="font-semibold text-slate-700">휴일<button type="button" class="qf-help" data-help="공휴일·대체공휴일·임시공휴일은 자동으로 들어옵니다(7일마다 확인). 기관 휴무일만 추가하세요." tabindex="-1">?</button></span><div id="cfg-hol-box" class="border border-slate-200 rounded-lg p-2"></div></div>
             <label class="space-y-1"><span class="font-semibold text-slate-700">개인정보 문의처<button type="button" class="qf-help" data-help="개인정보 안내문에 표시됩니다." tabindex="-1">?</button></span><input id="cfg-privacy" class="qf-in" placeholder="예: 운영지원팀 02-000-0000"></label>
             <label class="space-y-1"><span class="font-semibold text-slate-700">개인정보 보관 (일)<button type="button" class="qf-help" data-help="이용·수령 기간이 끝난 뒤 며칠 보관할지. 지나면 성명·연락처·주소·서명을 영구 삭제하고 통계만 남깁니다. Forms 원본은 직접 지워야 합니다." tabindex="-1">?</button></span><input id="cfg-pii-days" type="number" min="1" max="365" class="qf-in"></label>
+            <div class="space-y-1"><span class="font-semibold text-slate-700">파기 후에도 남길 항목<button type="button" class="qf-help" data-help="개인정보를 파기할 때 이 항목은 지우지 않고 남깁니다(참석·발급 기록 확인용). 연락처·주소·입금자명·서명은 항상 지웁니다." tabindex="-1">?</button></span><div class="flex gap-3 pt-1"><label class="flex items-center gap-1"><input type="checkbox" data-keep="name"> 성명(동반자 포함)</label><label class="flex items-center gap-1"><input type="checkbox" data-keep="org"> 소속</label></div></div>
           </div>
           <div class="border border-slate-200 rounded-lg p-3 space-y-2 text-xs">
             <p class="font-bold text-slate-800"><i class="fa-solid fa-shield-halved text-emerald-600"></i> 개인정보 안내문<button type="button" class="qf-help" data-help="## 제목 줄마다 펼침 항목 하나가 됩니다.
@@ -454,7 +455,7 @@ const APP_NAME = 'QuickForm';
 /** SharePoint 문서 라이브러리 안의 저장 폴더 기본값. 기관마다 배포 링크에 &folder=경로 로 바꿀 수 있음 */
 const DATA_FOLDER = 'QuickFormData';
 const LEGACY_FOLDERS = ['EWelfareData/QuickForm'];   // 예전 기본값 — 이미 쓰던 기관은 자동으로 이어서 씀
-const APP_VERSION = 'QF-5.11.5 · 11-17 11:00';
+const APP_VERSION = 'QF-5.12.0 · 11-17 12:00';
 const GRAPH = 'https://graph.microsoft.com/v1.0';
 /** 권한 범위: 기본 Sites.ReadWrite.All, 배포 링크에 &perm=selected 면 Sites.Selected(지정한 사이트만) */
 const scopeStr = () => `openid profile email offline_access https://graph.microsoft.com/${Infra.cfg.permSelected ? 'Sites.Selected' : 'Sites.ReadWrite.All'}`;
@@ -1020,6 +1021,18 @@ const roundAppsAll = (r) => DB.applications.filter(a => a.roundId === r.id);
 /** 화면에 쓰는 목록: 시설 담당자는 자기 시설 것만 */
 const roundApps = (r) => { const s = DB.services.find(x => x.rounds.some(y => y.id === r.id)); return roundAppsAll(r).filter(a => !s || appVisible(s, a)); };
 const piiOf = a => (!a || a.isPurged) ? null : (PII[a.roundId]?.entries?.[a.id] || null);
+/** 파기 후에도 남긴 기록(성명·소속 등, 설정 → 개인정보 보관). 없으면 null */
+const keptOf = a => (a?.isPurged && PII[a.roundId]?.entries?.[a.id]?.kept) ? PII[a.roundId].entries[a.id] : null;
+const keepKeys = () => Array.isArray(DB?.config?.keepOnPurge) ? DB.config.keepOnPurge : ['name', 'org'];   // 기본: 성명·소속은 남김
+/** 파기할 때 남길 만큼만 줄인 기록 (연락처·주소·입금자명·서명 등은 지움) */
+function keepEntry(s, e) {
+  const K = keepKeys(); if (!K.length || !e) return null;
+  const F = re => (s.fields || []).find(f => re.test(f.label || '')), orgF = F(/소속|기관/), compF = (s.fields || []).find(f => f.cond === 'qty2' && f.type === 'text');
+  const out = { kept: true, ext: {} };
+  if (K.includes('name')) { out.name = e.name || ''; if (compF && e.ext?.[compF.id]) out.ext[compF.id] = e.ext[compF.id]; if (e.ckName) out.ckName = e.ckName; }
+  if (K.includes('org') && orgF && e.ext?.[orgF.id]) out.ext[orgF.id] = e.ext[orgF.id];
+  return out.name || Object.keys(out.ext).length ? out : null;
+}
 function roundExpiry(r, days = DB.config.piiRetentionDays) {
   const end = [r.validEnd, r.pickupEnd].filter(Boolean).sort().pop() || '';
   const d = parseDT(end + ' 23:59');
@@ -1213,7 +1226,6 @@ async function mutatePii(rid, fn, fac = '') {
 async function loadPii(rid, force = false) {
   if (!rid) return;
   const round = findRound(DB, rid);
-  if (round?.piiPurgedAt) { PII[rid] = { entries: {}, parts: {}, loaded: true }; return; }
   if (PII[rid]?.loaded && !force) return;
   const parts = {}; let ok = 0, denied = 0;
   for (const fac of piiParts(rid)) {
@@ -1741,7 +1753,7 @@ function renderAdmin(s, r) {
   const piiLoading = !r.piiPurgedAt && !PII[r.id]?.loaded;
   tb.innerHTML = rows.map((a, i) => {
     const p = piiOf(a);
-    const nameCell = a.isPurged ? '<span class="text-slate-400">익명 (파기됨)</span>'
+    const nameCell = a.isPurged ? (keptOf(a)?.name ? `${esc(maskName(keptOf(a).name))} <span class="text-[10px] text-slate-400 font-normal">(파기됨)</span>` : '<span class="text-slate-400">익명 (파기됨)</span>')
       : p ? `${esc(maskName(p.name))}<br><span class="text-[10px] text-slate-400 font-normal">${esc(p.phone ? maskPhone(p.phone) : '')}</span>${ADDR && p.addr ? `<span class="block text-[10px] text-slate-500 font-normal max-w-[16rem]" title="${VIEW.mask ? '' : esc(p.addr)}"><i class="fa-solid fa-location-dot"></i> ${esc(VIEW.mask ? maskAddr(p.addr) : `${p.zip ? `(${p.zip}) ` : ''}${p.addr}`)}</span>` : ''}`
         : `<span class="text-slate-400">${piiLoading ? '불러오는 중…' : '(정보 없음)'}</span>`;
     const src = (a.source === 'web' ? '<span class="text-[9px] bg-emerald-50 text-emerald-700 px-1 rounded ml-1">모바일</span>' : a.source === 'forms' ? '<span class="text-[9px] bg-indigo-50 text-indigo-700 px-1 rounded ml-1">Forms</span>' : a.source === 'kiosk' ? '<span class="text-[9px] bg-amber-50 text-amber-800 px-1 rounded ml-1">태블릿</span>' : '<span class="text-[9px] bg-slate-100 text-slate-600 px-1 rounded ml-1">직원입력</span>') + (a.late ? '<span class="text-[9px] bg-rose-50 text-rose-700 px-1 rounded ml-1">마감 후</span>' : '');
@@ -3487,11 +3499,17 @@ async function runPurge(list) {
     // 보관(archive)된 회차는 보관 파일 안의 신청으로 서명 위치를 찾고, 보관 파일에도 파기 표시
     let arch = null; if (r.archived) { arch = (await Store.readJson(archRel(s.id, r.id)).catch(() => ({}))).data || null; }
     const pool = arch ? arch.applications : DB.applications.filter(a => a.roundId === r.id);
-    const sigs = pool.filter(a => a.hasSignature).map(a => sigRel(a.id, s.id, a.facility || ''));
+    const sigs = [...pool.filter(a => a.hasSignature).map(a => sigRel(a.id, s.id, a.facility || '')), ...pool.flatMap(a => Object.values(a.ck || {}).flatMap(m => Object.values(m || {}).map(v => v?.sig)).filter(x => typeof x === 'string').map(n => `${facDir(s.id, a.facility || '')}/signatures/${n}.png`))];
     for (const rel of sigs) { const how = await Store.hardDelete(rel); if (how === 'recycle') rep.recycle = true; if (how !== 'none') rep.sigs++; }
     if (arch) { arch.applications.forEach(a => { if (!a.isPurged) { a.isPurged = true; a.purgedAt = ymd(); a.hasSignature = false; } }); await Store.putBlob(archRel(s.id, r.id), new Blob([JSON.stringify(arch)], { type: 'application/json' }), 'application/json'); }
-    for (const fac of ['', ...svcFacs(s)]) { const how = await Store.hardDelete(piiRel(r.id, s.id, fac)).catch(() => 'none'); if (how === 'recycle') rep.recycle = true; }
-    PII[r.id] = { entries: {}, parts: {}, loaded: true };
+    for (const fac of ['', ...svcFacs(s)]) {
+      const rel = piiRel(r.id, s.id, fac);
+      // 남길 항목(성명·소속)만 남긴 파일로 바꿔 쓴 뒤, 나머지는 지움
+      let kept = {}; try { const { data } = await Store.readJson(rel); Object.entries(data?.entries || {}).forEach(([id, e]) => { const k = keepEntry(s, e); if (k) kept[id] = k; }); } catch { kept = {}; }
+      if (Object.keys(kept).length) { await Store.putBlob(rel, new Blob([JSON.stringify({ entries: kept, keptAt: ymdhm() })], { type: 'application/json' }), 'application/json'); }
+      else { const how = await Store.hardDelete(rel).catch(() => 'none'); if (how === 'recycle') rep.recycle = true; }
+    }
+    PII[r.id] = { entries: {}, parts: {}, loaded: false }; await loadPii(r.id, true).catch(() => { });
     const n = await mutateMain(d => {
       const rr = findRound(d, r.id); if (!rr) return false;
       rr.piiPurgedAt = ymdhm(); rr.piiPurgedBy = Auth.email;
@@ -3513,7 +3531,7 @@ function purgeReportHtml(rep) {
   const forms = [...new Set(rep.rounds.map(x => x.s).filter(s => s.formsUrl || s.formsSource).map(s => s.name))];
   return `<div class="space-y-2 text-xs leading-relaxed">
     ${rep.failed.length ? `<p class="text-rose-700 bg-rose-50 border border-rose-200 rounded p-2">파기하지 못한 회차 ${rep.failed.length}개 — 해당 서비스 담당자나 총괄관리자가 앱을 열면 다시 시도합니다.<br>${rep.failed.map(f => `• ${esc(f.s.name)} · ${esc(f.r.name)}: ${esc(f.msg)}`).join('<br>')}</p>` : ''}
-    <p><b>${rep.rounds.length}개 회차</b>, 신청 <b>${rep.apps}건</b>의 개인정보와 서명 <b>${rep.sigs}건</b>을 삭제했습니다.<br>수량·금액·수령 여부 등 통계는 보존됩니다.</p>
+    <p><b>${rep.rounds.length}개 회차</b>, 신청 <b>${rep.apps}건</b>의 개인정보와 서명 <b>${rep.sigs}건</b>을 삭제했습니다.<br>수량·금액·수령 여부 등 통계는 보존됩니다.${keepKeys().length ? `<br>설정에 따라 <b>${keepKeys().map(k => ({ name: '성명', org: '소속' })[k]).join('·')}</b>은 남겼습니다.` : ''}</p>
     ${rep.recycle ? '<p class="text-amber-700">※ 일부 파일은 영구 삭제 권한이 없어 SharePoint 휴지통으로 이동했습니다. 사이트 휴지통(1단계·2단계)에서 비워 주세요.</p>' : ''}
     ${forms.length ? `<div class="bg-amber-50 border border-amber-200 rounded p-2.5 text-amber-900"><b>Microsoft Forms 원본도 삭제하세요</b><br>
     ${forms.length ? `대상: ${forms.map(esc).join(', ')}<br>` : ''}Forms → [응답] 탭 → [⋯] → <b>모든 응답 삭제</b>, 그리고 응답 Excel 파일(내려받은 파일 포함)의 해당 행을 지워야 개인정보 파기가 끝납니다.</div>` : ''}</div>`;
@@ -4088,7 +4106,7 @@ const ckMarks = (s, sess) => (s.checkin?.marks || []).filter(m => m.label && (!m
 const appQty = a => Math.max(1, qtySum(a));
 /** 한 신청의 사람 목록: [{ name, lead }] — 동반자 성함 칸을 쉼표로 나눔, 모자라면 빈 이름 */
 function appPeople(s, a) {
-  const p = piiOf(a) || {}, e = p.ext || {}, compF = (s.fields || []).find(f => f.cond === 'qty2' && f.type === 'text');
+  const p = piiOf(a) || keptOf(a) || {}, e = p.ext || {}, compF = (s.fields || []).find(f => f.cond === 'qty2' && f.type === 'text');
   const out = [{ name: p.name || '', lead: true }];
   if (s.checkin && s.checkin.perPerson === false && ckOn(s)) return out;
   const raw = String(e[compF?.id] || '').trim();
@@ -4104,8 +4122,8 @@ function attendPeople(s, apps, sess = null) {
   const nm = n => VIEW.mask ? maskName(n || '') : (n || '');
   const out = [];
   apps.slice().sort((a, b) => String(piiOf(a)?.name || '').localeCompare(String(piiOf(b)?.name || ''), 'ko')).forEach(a => {
-    const p = piiOf(a) || {}, e = p.ext || {}, org = String(e[orgF?.id] || '');
-    appPeople(s, a).forEach((x, idx) => out.push({ a, idx, name: a.isPurged ? '익명(파기됨)' : nm(x.name), org, pos: x.lead ? String(e[posF?.id] || '') : '', role: x.lead ? '신청자' : `동반 (${nm(p.name)})`, lead: x.lead, ck: sess !== null ? a.ck?.[sess]?.[idx] || null : null }));
+    const p = piiOf(a) || keptOf(a) || {}, e = p.ext || {}, org = String(e[orgF?.id] || '');
+    appPeople(s, a).forEach((x, idx) => out.push({ a, idx, name: a.isPurged && !keptOf(a) ? '익명(파기됨)' : nm(x.name), org, pos: x.lead ? String(e[posF?.id] || '') : '', role: x.lead ? '신청자' : `동반 (${nm(p.name)})`, lead: x.lead, ck: sess !== null ? a.ck?.[sess]?.[idx] || null : null }));
   });
   return out;
 }
@@ -4131,7 +4149,7 @@ function renderReport(s, r) {
     <table class="w-full text-xs text-center border-collapse border border-slate-300"><thead class="bg-slate-100 font-bold"><tr>${th('재원')}${th('인원')}${s.items.map(it => th(esc(it.name))).join('')}${th('금액')}</tr></thead><tbody>
     ${[...fundOpts(s), ...new Set(list.map(a => a.fund || '').filter(f => !fundOpts(s).includes(f)))].map(f => { const xs = list.filter(a => (a.fund || '') === f); return xs.length ? `<tr><td class="${td} font-semibold ${f ? '' : 'text-amber-700'}">${esc(f || '미지정')}</td><td class="${td}">${xs.length}</td>${s.items.map(it => `<td class="${td}">${sumQ(xs, it.id) || ''}</td>`).join('')}<td class="${td} font-semibold">${amt(xs)}원</td></tr>` : ''; }).join('')}
     <tr class="font-bold bg-slate-50"><td class="${td}">계</td><td class="${td}">${list.length}</td>${s.items.map(it => `<td class="${td}">${sumQ(list, it.id)}</td>`).join('')}<td class="${td}">${amt(list)}원</td></tr></tbody></table>` : '';
-  const nameCell = a => { const p = piiOf(a); if (a.isPurged) return '<span class="text-slate-400 font-normal">익명 (파기됨)</span>'; const nm = esc(maskName(p?.name || '-')) + (svcFacs(s).length && !VIEW.fac ? ` <span class="font-normal text-[10px] text-slate-500">[${esc(a.facility || '미지정')}]</span>` : ''); return nm + (ADDR && p?.addr ? `<br><span class="font-normal text-[10px] text-slate-600">${esc(VIEW.mask ? maskAddr(p.addr) : p.addr)}</span>` : ''); };
+  const nameCell = a => { const p = piiOf(a); if (a.isPurged) return keptOf(a)?.name ? esc(maskName(keptOf(a).name)) : '<span class="text-slate-400 font-normal">익명 (파기됨)</span>'; const nm = esc(maskName(p?.name || '-')) + (svcFacs(s).length && !VIEW.fac ? ` <span class="font-normal text-[10px] text-slate-500">[${esc(a.facility || '미지정')}]</span>` : ''); return nm + (ADDR && p?.addr ? `<br><span class="font-normal text-[10px] text-slate-600">${esc(VIEW.mask ? maskAddr(p.addr) : p.addr)}</span>` : ''); };
   const progCell = a => { const p = piiOf(a); return `${esc(a.programName || '')}${guardianText(p, VIEW.mask) ? `<br><span class="text-[10px]">${guardianText(p, VIEW.mask)}</span>` : ''}`; };
 
   if (DOC === 'attend') {
@@ -4310,7 +4328,7 @@ async function exportReportXlsx() {
     return;
   }
   const apps = optFilter(s, facFilter(s, roundApps(r))), FUND = useFund(s), DEP = payMode(s) === 'deposit', ADDR = addrMode(s) !== 'off', EXT = pubFields(s, true).length > 0;
-  const nm = a => a.isPurged ? '익명(파기됨)' : (VIEW.mask ? maskName(piiOf(a)?.name || '') : (piiOf(a)?.name || ''));
+  const nm = a => { const n = a.isPurged ? keptOf(a)?.name : piiOf(a)?.name; return a.isPurged && !n ? '익명(파기됨)' : (VIEW.mask ? maskName(n || '') : (n || '')); };
   const title = $('#report-title').textContent, head = [[DB.config.institutionName || ''], [title], [`회차: ${r.name}`, `작성일: ${ymd()}`], []];
   const qty = [['품목', '단가(원)', DOC === 'apply' ? '신청 수량' : '수령 수량', '금액(원)'], ...s.items.map(it => { const list = DOC === 'apply' ? apps : apps.filter(a => a.isReceived); const q = list.reduce((x, a) => x + (a.itemQty?.[it.id] || 0), 0); return [it.name, it.price || 0, q, q * (it.price || 0)]; })];
   const fundRows = FUND ? [[], ['지출 재원', '인원', '금액(원)'], ...[...new Set(apps.map(a => a.fund || '미지정'))].map(f => { const xs = apps.filter(a => (a.fund || '미지정') === f && (DOC === 'apply' || a.isReceived)); return [f, xs.length, xs.reduce((x, a) => x + (a.totalAmount || 0), 0)]; }).filter(x => x[1])] : [];
@@ -4366,7 +4384,7 @@ function renderConfig() {
   if (document.activeElement?.id?.startsWith('cfg-') !== true) {
     $('#cfg-admins').value = lcList(c.admins).join(', '); mountPeople($('#cfg-admins'));
     $('#cfg-inst-name').value = c.institutionName || ''; $('#cfg-app-title').value = c.appTitle || ''; $('#cfg-app-tagline').value = c.appTagline || ''; CFG_BRAND = { logo: c.logo || '', color: c.brandColor || '' }; $('#cfg-brand').value = c.brandColor || '#0b4136'; renderLogoPrev(); if ($('#cfg-report-signer')) $('#cfg-report-signer').value = c.reportSigner || '';
-    $('#cfg-bank-name').value = c.bankName || ''; $('#cfg-bank-acc').value = c.bankAccount || ''; $('#cfg-bank-holder').value = c.bankHolder || ''; $('#cfg-hook').value = c.webhookUrl || ''; $('#cfg-intake-acct').value = c.intakeAccount || ''; if ($('#cfg-default-kiosk')) $('#cfg-default-kiosk').value = lcList(c.defaultKiosk).join(', '); $('#cfg-hold-limit').value = String(c.holdLimit || 3); showLastIntake(); if (c.flowUrl) { $('#lnk-flow').href = c.flowUrl; $('#lnk-flow').classList.remove('hidden'); } renderMasterLists(); renderFacilityStaff(); $('#cfg-privacy').value = c.privacyContact || ''; if (!HOL.dirty) { HOL.add = new Set(c.holidays || []); HOL.off = new Set(c.notHolidays || []); } renderHolidayBox(); $('#cfg-consent').value = c.consentText || DEFAULT_CONSENT; $('#cfg-pii-days').value = c.piiRetentionDays || 14;
+    $('#cfg-bank-name').value = c.bankName || ''; $('#cfg-bank-acc').value = c.bankAccount || ''; $('#cfg-bank-holder').value = c.bankHolder || ''; $('#cfg-hook').value = c.webhookUrl || ''; $('#cfg-intake-acct').value = c.intakeAccount || ''; if ($('#cfg-default-kiosk')) $('#cfg-default-kiosk').value = lcList(c.defaultKiosk).join(', '); $('#cfg-hold-limit').value = String(c.holdLimit || 3); showLastIntake(); if (c.flowUrl) { $('#lnk-flow').href = c.flowUrl; $('#lnk-flow').classList.remove('hidden'); } renderMasterLists(); renderFacilityStaff(); $('#cfg-privacy').value = c.privacyContact || ''; if (!HOL.dirty) { HOL.add = new Set(c.holidays || []); HOL.off = new Set(c.notHolidays || []); } renderHolidayBox(); $('#cfg-consent').value = c.consentText || DEFAULT_CONSENT; $('#cfg-pii-days').value = c.piiRetentionDays || 14; { const K = keepKeys(); document.querySelectorAll('[data-keep]').forEach(x => { x.checked = K.includes(x.dataset.keep); }); }
   }
   wireBrandInputs(); renderSetupCheck();
   $('#cfg-admin-warn').innerHTML = adminsSet() ? '' : `<div class="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-900 flex items-center justify-between gap-2">
@@ -4529,7 +4547,7 @@ async function saveConfig() {
   if (!(days >= 1 && days <= 365)) return UI.toast('보관 일수는 1~365 사이로 입력하세요.', 'err');
   const hk = $('#cfg-hook').value.trim();
   if (hk && !/^https:\/\/[^\s]+$/.test(hk)) return UI.toast('웹훅 URL은 https:// 로 시작해야 합니다.', 'err');
-  const v = { appTagline: $('#cfg-app-tagline')?.value.trim() || '', logo: CFG_BRAND.logo || '', brandColor: CFG_BRAND.color || '', reportSigner: $('#cfg-report-signer')?.value.trim() || '', institutionName: $('#cfg-inst-name').value.trim(), appTitle: $('#cfg-app-title').value.trim() || APP_NAME, bankName: $('#cfg-bank-name').value.trim(), bankAccount: $('#cfg-bank-acc').value.trim(), bankHolder: $('#cfg-bank-holder').value.trim(), webhookUrl: $('#cfg-hook').value.trim(), defaultKiosk: lcList($('#cfg-default-kiosk')?.value || ''), intakeAccount: $('#cfg-intake-acct').value.trim().toLowerCase(), holdLimit: Number($('#cfg-hold-limit').value) || 3, privacyContact: $('#cfg-privacy').value.trim(), holidays: [...HOL.add].sort(), notHolidays: [...HOL.off].sort(), consentText: (() => { const t = $('#cfg-consent').value.replace(/\r/g, '').trim(); return !t || t === DEFAULT_CONSENT ? '' : t; })(), piiRetentionDays: days };
+  const v = { appTagline: $('#cfg-app-tagline')?.value.trim() || '', logo: CFG_BRAND.logo || '', brandColor: CFG_BRAND.color || '', reportSigner: $('#cfg-report-signer')?.value.trim() || '', institutionName: $('#cfg-inst-name').value.trim(), appTitle: $('#cfg-app-title').value.trim() || APP_NAME, bankName: $('#cfg-bank-name').value.trim(), bankAccount: $('#cfg-bank-acc').value.trim(), bankHolder: $('#cfg-bank-holder').value.trim(), webhookUrl: $('#cfg-hook').value.trim(), defaultKiosk: lcList($('#cfg-default-kiosk')?.value || ''), intakeAccount: $('#cfg-intake-acct').value.trim().toLowerCase(), holdLimit: Number($('#cfg-hold-limit').value) || 3, privacyContact: $('#cfg-privacy').value.trim(), holidays: [...HOL.add].sort(), notHolidays: [...HOL.off].sort(), consentText: (() => { const t = $('#cfg-consent').value.replace(/\r/g, '').trim(); return !t || t === DEFAULT_CONSENT ? '' : t; })(), piiRetentionDays: days, keepOnPurge: [...document.querySelectorAll('[data-keep]:checked')].map(x => x.dataset.keep) };
   if (v.consentText && !/^##\s*\S/m.test(v.consentText)) return UI.toast('동의 안내문은 "## 제목" 줄로 항목을 나눠 주세요.', 'err');
   if (v.intakeAccount && !EMAIL_RE.test(v.intakeAccount)) return UI.toast('접수 계정은 이메일 형식으로 넣어 주세요.', 'err');
   if (v.defaultKiosk.some(x => !EMAIL_RE.test(x))) return UI.toast('기본 태블릿 계정은 이메일 형식으로 넣어 주세요.', 'err');
