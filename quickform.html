@@ -458,7 +458,7 @@ const APP_NAME = 'QuickForm';
 /** SharePoint 문서 라이브러리 안의 저장 폴더 기본값. 기관마다 배포 링크에 &folder=경로 로 바꿀 수 있음 */
 const DATA_FOLDER = 'QuickFormData';
 const LEGACY_FOLDERS = ['EWelfareData/QuickForm'];   // 예전 기본값 — 이미 쓰던 기관은 자동으로 이어서 씀
-const APP_VERSION = 'QF-5.16.0 · 11-17 20:00';
+const APP_VERSION = 'QF-5.16.1 · 11-19 10:00';
 const GRAPH = 'https://graph.microsoft.com/v1.0';
 /** 권한 범위: 기본 Sites.ReadWrite.All, 배포 링크에 &perm=selected 면 Sites.Selected(지정한 사이트만) */
 const scopeStr = () => `openid profile email offline_access https://graph.microsoft.com/${Infra.cfg.permSelected ? 'Sites.Selected' : 'Sites.ReadWrite.All'}`;
@@ -4181,7 +4181,7 @@ function attendPeople(s, apps, sess = null) {
 }
 function renderReport(s, r) {
   const DOC = VIEW.doc === 'receipt' ? 'receipt' : VIEW.doc === 'attend' && attendOk(s) ? 'attend' : 'apply';
-  $('#rep-doc-attend')?.classList.toggle('hidden', !attendOk(s)); $('#rep-sec1-title').parentElement.classList.toggle('hidden', DOC === 'attend');
+  $('#rep-doc-attend')?.classList.toggle('hidden', !attendOk(s)); $('#rep-sec1-title').parentElement.classList.toggle('hidden', DOC === 'attend' || (DOC === 'receipt' && ckOn(s)));
   const appsAll = facFilter(s, roundApps(r)), apps = optFilter(s, appsAll), inst = DB.config.institutionName || '', facLabel = (svcFacs(s).length && VIEW.fac ? ` (${VIEW.fac === '__none' ? '시설 미지정' : VIEW.fac})` : '') + optLabel(s);
   const fw = $('#rep-fac-wrap'); if (fw) { fw.innerHTML = facSelectHtml(s, 'rep-fac') + ' ' + optSelectHtml(s, 'rep-opt', appsAll); wireOptSelect(s, 'rep-opt'); const fx = $('#rep-fac'); if (fx) fx.onchange = () => { VIEW.fac = fx.value; renderAll(); }; }
   const DEP = payMode(s) === 'deposit', FUND = useFund(s), ADDR = addrMode(s) !== 'off', PROG = (s.programs || []).length || s.useGuardian, EXT = pubFields(s, true).length > 0;
@@ -4204,17 +4204,19 @@ function renderReport(s, r) {
   const nameCell = a => { const p = piiOf(a); if (a.isPurged) return keptOf(a)?.name ? esc(maskName(keptOf(a).name)) : '<span class="text-slate-400 font-normal">익명 (파기됨)</span>'; const nm = esc(maskName(p?.name || '-')) + (svcFacs(s).length && !VIEW.fac ? ` <span class="font-normal text-[10px] text-slate-500">[${esc(a.facility || '미지정')}]</span>` : ''); return nm + (ADDR && p?.addr ? `<br><span class="font-normal text-[10px] text-slate-600">${esc(VIEW.mask ? maskAddr(p.addr) : p.addr)}</span>` : ''); };
   const progCell = a => { const p = piiOf(a); return `${esc(a.programName || '')}${guardianText(p, VIEW.mask) ? `<br><span class="text-[10px]">${guardianText(p, VIEW.mask)}</span>` : ''}`; };
 
-  if (DOC === 'attend') {
+  const RCK = DOC === 'receipt' && ckOn(s);   // 현장 확인을 쓰는 행사: 참석 서명 = 수령 확인 → 사람별 서명으로 대장을 만듦
+  if (DOC === 'attend' || RCK) {
     const SS = ckOn(s) ? ckSessions(s, appsAll) : [], o = VIEW.opt && VIEW.opt.sid === s.id ? VIEW.opt.val : '';
     const sess = ckOn(s) ? (SS.length === 1 ? SS[0] : SS.includes(o) ? o : null) : null, MK = sess !== null ? ckMarks(s, sess) : [];
-    const P = attendPeople(s, apps, sess), named = P.filter(x => x.name).length, done = P.filter(x => x.ck).length;
-    $('#report-title').textContent = `${s.name.replace(/\s*(참가\s*신청|참석\s*신청|신청)$/, '')} 참석자 서명부` + facLabel;
-    $('#report-sub').textContent = '행사 당일 참석 확인용 (개인정보 보호법 준수)';
-    $('#rep-footer-text').textContent = '위와 같이 참석하였음을 확인합니다.';
+    const P = attendPeople(s, apps, sess); if (RCK && sess === null) P.forEach(x => { x.ck = Object.values(x.a.ck || {}).map(o => o?.[x.idx]).find(Boolean) || null; });
+    const named = P.filter(x => x.name).length, done = P.filter(x => x.ck).length;
+    $('#report-title').textContent = `${s.name.replace(/\s*(참가\s*신청|참석\s*신청|신청)$/, '')} ${RCK ? '수령 확인 대장' : '참석자 서명부'}` + facLabel;
+    $('#report-sub').textContent = RCK ? '현장 참석 확인 서명으로 수령을 확인함 (개인정보 보호법 준수)' : '행사 당일 참석 확인용 (개인정보 보호법 준수)';
+    $('#rep-footer-text').textContent = RCK ? '위와 같이 수령하였음을 확인합니다.' : '위와 같이 참석하였음을 확인합니다.';
     $('#rep-info').innerHTML = info('행사', esc(r.name)) + (s.desc ? info('일시·장소', esc(s.desc)) : '') + info('신청', `${apps.length}건 · ${P.length}명`) + (sess !== null ? info('현장 확인', `${done}명 / ${P.length}명`) : info('이름 미기재 동반자', `${P.length - named}명 (빈 줄)`)) + (ckOn(s) && SS.length > 1 && sess === null ? `<p class="col-span-2 text-amber-700">위의 [${esc(ckField(s)?.label.replace(/\s*\*.*$/, '') || '구분')}]에서 하나를 고르면 그 행사의 서명·체크가 함께 나옵니다.</p>` : '');
-    $('#rep-sec2-title').textContent = `참석자 명단 및 서명 (총 ${P.length}명)`;
+    $('#rep-sec2-title').textContent = RCK ? `수령자 명단 및 서명 (수령 ${done}명 / ${P.length}명)` : `참석자 명단 및 서명 (총 ${P.length}명)`;
     $('#rep-applicant-head').innerHTML = `<tr>${th('No', 'w-10 text-center')}${th('성명')}${th('소속')}${th('직위')}${th('구분')}${MK.map(m => th(esc(m.label), 'text-center')).join('')}${th('서명', 'text-center')}</tr>`;
-    const sigCell = x => { if (!x.ck) return ''; const u = SIG_URLS.sid === s.id && typeof x.ck.sig === 'string' ? SIG_URLS.map[x.ck.sig] : ''; return (u ? `<img src="${esc(u)}" class="h-8 mx-auto" alt="서명">` : x.ck.sig ? '' : '<span class="font-bold text-emerald-700">✔ 참석</span>') + `<span class="block text-[9px] text-slate-500">${esc(String(x.ck.at || '').slice(11))}</span>`; };
+    const sigCell = x => { if (!x.ck) return ''; const u = SIG_URLS.sid === s.id && typeof x.ck.sig === 'string' ? SIG_URLS.map[x.ck.sig] : ''; return (u ? `<img src="${esc(u)}" class="h-8 mx-auto" alt="서명">` : x.ck.sig ? '' : `<span class="font-bold text-emerald-700">✔ ${RCK ? '수령' : '참석'}</span>`) + `<span class="block text-[9px] text-slate-500">${esc(String(x.ck.at || '').slice(11))}</span>`; };
     $('#rep-applicant-body').innerHTML = P.length ? P.map((x, i) => `<tr class="${x.lead ? '' : 'text-slate-600'}"><td class="${td} text-center">${i + 1}</td><td class="${td} ${x.lead ? 'font-bold' : ''}" style="height:2.4rem;min-width:5.5rem">${esc(x.name)}</td><td class="${td}">${esc(x.org)}</td><td class="${td}">${esc(x.pos)}</td><td class="${td} text-[11px]">${esc(x.role)}</td>${MK.map(m => `<td class="${td} text-center whitespace-nowrap">${esc(mkCell(m, x.a.mk?.[m.id]?.[x.idx]))}</td>`).join('')}<td class="${td} text-center" style="min-width:7rem">${sigCell(x)}</td></tr>`).join('') : `<tr><td colspan="${6 + MK.length}" class="${td} text-center text-slate-400">신청 내역이 없습니다.</td></tr>`;
     if (P.some(x => x.ck?.sig) && !_sigLoading && (!SIG_URLS.at || SIG_URLS.sid !== s.id || Date.now() - SIG_URLS.at > 30000)) { _sigLoading = true; loadSigUrls(s.id, true).then(() => { if (VIEW.tab === 'report') renderReport(curSvc(), curRound()); }).catch(() => { }).finally(() => { _sigLoading = false; }); }
   } else if (DOC === 'apply') {
@@ -4370,12 +4372,12 @@ async function exportStatsXlsx() {
 /** 결재 문서를 파일로: 구입 신청 명부 / 수령 확인 대장 (서명 이미지는 PDF에만 들어감) */
 async function exportReportXlsx() {
   await loadLib('xlsx'); const X = window.XLSX, s = curSvc(), r = curRound(s), DOC = VIEW.doc === 'receipt' ? 'receipt' : VIEW.doc === 'attend' && attendOk(s) ? 'attend' : 'apply';
-  if (DOC === 'attend') {
+  if (DOC === 'attend' || (DOC === 'receipt' && ckOn(s))) {
     const all = facFilter(s, roundApps(r)), apps = optFilter(s, all), SS = ckOn(s) ? ckSessions(s, all) : [], o = VIEW.opt && VIEW.opt.sid === s.id ? VIEW.opt.val : '', sess = ckOn(s) ? (SS.length === 1 ? SS[0] : SS.includes(o) ? o : null) : null, MK = sess !== null ? ckMarks(s, sess) : [];
-    const P = attendPeople(s, apps, sess), title = $('#report-title').textContent;
+    const P = attendPeople(s, apps, sess), title = $('#report-title').textContent; if (DOC === 'receipt' && sess === null) P.forEach(x => { x.ck = Object.values(x.a.ck || {}).map(o => o?.[x.idx]).find(Boolean) || null; });
     const ws = X.utils.aoa_to_sheet([[DB.config.institutionName || ''], [title], [`행사: ${r.name}`, `작성일: ${ymd()}`, `총 ${P.length}명`], [], ['No', '성명', '소속', '직위', '구분', ...(P.some(x => x.seat) ? ['좌석'] : []), ...MK.map(m => m.label), ...(sess !== null ? ['현장 확인'] : []), '서명'], ...P.map((x, i) => [i + 1, x.name, x.org, x.pos, x.role, ...(P.some(x => x.seat) ? [x.seat] : []), ...MK.map(m => { const c = mkCell(m, x.a.mk?.[m.id]?.[x.idx]); return c === '✔' ? 'O' : c; }), ...(sess !== null ? [x.ck?.at || ''] : []), ''])]);
     ws['!cols'] = [4, 12, 26, 14, 18, 16].map(w => ({ wch: w }));
-    const wb = X.utils.book_new(); X.utils.book_append_sheet(wb, ws, '참석자서명부'); X.writeFile(wb, `${title}_${ymd()}.xlsx`.replace(/[\\/:*?"<>|]/g, ''));
+    const wb = X.utils.book_new(); X.utils.book_append_sheet(wb, ws, DOC === 'receipt' ? '수령확인대장' : '참석자서명부'); X.writeFile(wb, `${title}_${ymd()}.xlsx`.replace(/[\\/:*?"<>|]/g, ''));
     if (VIEW.mask) UI.toast('개인정보 가림이 켜져 있어 성명을 가려 저장했습니다. 실명은 [개인정보 가림] OFF 후 저장하세요.', 'info');
     return;
   }
