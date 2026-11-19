@@ -458,7 +458,7 @@ const APP_NAME = 'QuickForm';
 /** SharePoint 문서 라이브러리 안의 저장 폴더 기본값. 기관마다 배포 링크에 &folder=경로 로 바꿀 수 있음 */
 const DATA_FOLDER = 'QuickFormData';
 const LEGACY_FOLDERS = ['EWelfareData/QuickForm'];   // 예전 기본값 — 이미 쓰던 기관은 자동으로 이어서 씀
-const APP_VERSION = 'QF-5.16.2 · 11-19 14:00';
+const APP_VERSION = 'QF-5.16.3 · 11-19 15:00';
 const GRAPH = 'https://graph.microsoft.com/v1.0';
 /** 권한 범위: 기본 Sites.ReadWrite.All, 배포 링크에 &perm=selected 면 Sites.Selected(지정한 사이트만) */
 const scopeStr = () => `openid profile email offline_access https://graph.microsoft.com/${Infra.cfg.permSelected ? 'Sites.Selected' : 'Sites.ReadWrite.All'}`;
@@ -4209,12 +4209,12 @@ function renderReport(s, r) {
     const SS = ckOn(s) ? ckSessions(s, appsAll) : [], o = VIEW.opt && VIEW.opt.sid === s.id ? VIEW.opt.val : '';
     const sess = ckOn(s) ? (SS.length === 1 ? SS[0] : SS.includes(o) ? o : null) : null, MK = sess !== null ? ckMarks(s, sess) : [];
     const P = attendPeople(s, apps, sess); if (RCK && sess === null) P.forEach(x => { x.ck = Object.values(x.a.ck || {}).map(o => o?.[x.idx]).find(Boolean) || null; });
-    if (RCK) P.forEach(x => { if (x.ck && !x.ck.sig) x.ck = null; });   // 직원이 대신 참석 확인한 분(서명 없음)은 수령 대장에서 비워 둠
+    const staffN = P.filter(x => x.ck && !x.ck.sig).length; if (ckOn(s)) P.forEach(x => { if (x.ck && !x.ck.sig) x.ck = null; });   // 서명부·수령 대장 모두: 본인이 서명한 분만 서명을 표시, 직원이 대신 확인한 분은 빈칸
     const named = P.filter(x => x.name).length, done = P.filter(x => x.ck).length;
     $('#report-title').textContent = `${s.name.replace(/\s*(참가\s*신청|참석\s*신청|신청)$/, '')} ${RCK ? '수령 확인 대장' : '참석자 서명부'}` + facLabel;
     $('#report-sub').textContent = RCK ? '현장 참석 확인 서명으로 수령을 확인함 (개인정보 보호법 준수)' : '행사 당일 참석 확인용 (개인정보 보호법 준수)';
     $('#rep-footer-text').textContent = RCK ? '위와 같이 수령하였음을 확인합니다.' : '위와 같이 참석하였음을 확인합니다.';
-    $('#rep-info').innerHTML = info('행사', esc(r.name)) + (s.desc ? info('일시·장소', esc(s.desc)) : '') + info('신청', `${apps.length}건 · ${P.length}명`) + (sess !== null ? info('현장 확인', `${done}명 / ${P.length}명`) : info('이름 미기재 동반자', `${P.length - named}명 (빈 줄)`)) + (ckOn(s) && SS.length > 1 && sess === null ? `<p class="col-span-2 text-amber-700">위의 [${esc(ckField(s)?.label.replace(/\s*\*.*$/, '') || '구분')}]에서 하나를 고르면 그 행사의 서명·체크가 함께 나옵니다.</p>` : '');
+    $('#rep-info').innerHTML = info('행사', esc(r.name)) + (s.desc ? info('일시·장소', esc(s.desc)) : '') + info('신청', `${apps.length}건 · ${P.length}명`) + (sess !== null ? info('현장 확인', `서명 ${done}명${staffN ? ` · 직원 확인 ${staffN}명` : ''} / ${P.length}명`) : info('이름 미기재 동반자', `${P.length - named}명 (빈 줄)`)) + (ckOn(s) && SS.length > 1 && sess === null ? `<p class="col-span-2 text-amber-700">위의 [${esc(ckField(s)?.label.replace(/\s*\*.*$/, '') || '구분')}]에서 하나를 고르면 그 행사의 서명·체크가 함께 나옵니다.</p>` : '');
     $('#rep-sec2-title').textContent = RCK ? `수령자 명단 및 서명 (수령 ${done}명 / ${P.length}명)` : `참석자 명단 및 서명 (총 ${P.length}명)`;
     $('#rep-applicant-head').innerHTML = `<tr>${th('No', 'w-10 text-center')}${th('성명')}${th('소속')}${th('직위')}${th('구분')}${MK.map(m => th(esc(m.label), 'text-center')).join('')}${th('서명', 'text-center')}</tr>`;
     const sigCell = x => { if (!x.ck) return ''; const u = SIG_URLS.sid === s.id && typeof x.ck.sig === 'string' ? SIG_URLS.map[x.ck.sig] : ''; return (u ? `<img src="${esc(u)}" class="h-8 mx-auto" alt="서명">` : x.ck.sig ? '' : `<span class="font-bold text-emerald-700">✔ ${RCK ? '수령' : '참석'}</span>`) + `<span class="block text-[9px] text-slate-500">${esc(String(x.ck.at || '').slice(11))}</span>`; };
@@ -4375,7 +4375,7 @@ async function exportReportXlsx() {
   await loadLib('xlsx'); const X = window.XLSX, s = curSvc(), r = curRound(s), DOC = VIEW.doc === 'receipt' ? 'receipt' : VIEW.doc === 'attend' && attendOk(s) ? 'attend' : 'apply';
   if (DOC === 'attend' || (DOC === 'receipt' && ckOn(s))) {
     const all = facFilter(s, roundApps(r)), apps = optFilter(s, all), SS = ckOn(s) ? ckSessions(s, all) : [], o = VIEW.opt && VIEW.opt.sid === s.id ? VIEW.opt.val : '', sess = ckOn(s) ? (SS.length === 1 ? SS[0] : SS.includes(o) ? o : null) : null, MK = sess !== null ? ckMarks(s, sess) : [];
-    const P = attendPeople(s, apps, sess), title = $('#report-title').textContent; if (DOC === 'receipt' && sess === null) P.forEach(x => { x.ck = Object.values(x.a.ck || {}).map(o => o?.[x.idx]).find(Boolean) || null; }); if (DOC === 'receipt') P.forEach(x => { if (x.ck && !x.ck.sig) x.ck = null; });
+    const P = attendPeople(s, apps, sess), title = $('#report-title').textContent; if (DOC === 'receipt' && sess === null) P.forEach(x => { x.ck = Object.values(x.a.ck || {}).map(o => o?.[x.idx]).find(Boolean) || null; }); if (ckOn(s)) P.forEach(x => { if (x.ck && !x.ck.sig) x.ck = null; });
     const ws = X.utils.aoa_to_sheet([[DB.config.institutionName || ''], [title], [`행사: ${r.name}`, `작성일: ${ymd()}`, `총 ${P.length}명`], [], ['No', '성명', '소속', '직위', '구분', ...(P.some(x => x.seat) ? ['좌석'] : []), ...MK.map(m => m.label), ...(sess !== null ? ['현장 확인'] : []), '서명'], ...P.map((x, i) => [i + 1, x.name, x.org, x.pos, x.role, ...(P.some(x => x.seat) ? [x.seat] : []), ...MK.map(m => { const c = mkCell(m, x.a.mk?.[m.id]?.[x.idx]); return c === '✔' ? 'O' : c; }), ...(sess !== null ? [x.ck?.at || ''] : []), ''])]);
     ws['!cols'] = [4, 12, 26, 14, 18, 16].map(w => ({ wch: w }));
     const wb = X.utils.book_new(); X.utils.book_append_sheet(wb, ws, DOC === 'receipt' ? '수령확인대장' : '참석자서명부'); X.writeFile(wb, `${title}_${ymd()}.xlsx`.replace(/[\\/:*?"<>|]/g, ''));
