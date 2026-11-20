@@ -458,7 +458,7 @@ const APP_NAME = 'QuickForm';
 /** SharePoint 문서 라이브러리 안의 저장 폴더 기본값. 기관마다 배포 링크에 &folder=경로 로 바꿀 수 있음 */
 const DATA_FOLDER = 'QuickFormData';
 const LEGACY_FOLDERS = ['EWelfareData/QuickForm'];   // 예전 기본값 — 이미 쓰던 기관은 자동으로 이어서 씀
-const APP_VERSION = 'QF-5.16.3 · 11-19 15:00';
+const APP_VERSION = 'QF-5.16.4 · 11-20 11:00';
 const GRAPH = 'https://graph.microsoft.com/v1.0';
 /** 권한 범위: 기본 Sites.ReadWrite.All, 배포 링크에 &perm=selected 면 Sites.Selected(지정한 사이트만) */
 const scopeStr = () => `openid profile email offline_access https://graph.microsoft.com/${Infra.cfg.permSelected ? 'Sites.Selected' : 'Sites.ReadWrite.All'}`;
@@ -1697,11 +1697,12 @@ function renderAdmin(s, r) {
   if (denied) $('#admin-denied').innerHTML = `<b><i class="fa-solid fa-lock"></i> 이 서비스의 개인정보 폴더에 접근 권한이 없습니다.</b><br>SharePoint 폴더 <code>${esc(Infra.cfg.folder)}/${esc(svcDir(s.id))}</code>에 본인 계정 권한이 필요합니다. 총괄관리자에게 요청하세요. (통계·수량은 볼 수 있지만 성명·연락처·서명은 표시되지 않습니다.)`;
 
   const appsAll = facFilter(s, roundApps(r)), apps = optFilter(s, appsAll);
-  const dep = apps.filter(a => a.isDeposited), rec = apps.filter(a => a.isReceived);
+  const dep = apps.filter(a => a.isDeposited), rec = apps.filter(a => recvOf(a, s));
   const card = (label, val, unit, color) => `<div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm"><p class="text-xs text-slate-500 font-medium">${label}</p><p class="text-xl font-black ${color} mt-1">${val} <span class="text-xs font-normal">${unit}</span></p></div>`;
   const DEP = payMode(s) === 'deposit', FUND = useFund(s), ADDR = addrMode(s) !== 'off', FACS = svcFacs(s), FACALL = myFacs(s) === 'all';
   $('#stats-cards-container').innerHTML = DEP
     ? card('총 신청', apps.length, '건', 'text-slate-900') + card('입금 완료', dep.length, '건', 'text-emerald-600') + card('수령 완료', rec.length, '건', 'text-blue-600') + card('입금확인 금액', won(dep.reduce((x, a) => x + (a.totalAmount || 0), 0)), '원', 'text-amber-600')
+    : ckOn(s) ? (() => { const P = apps.flatMap(a => ckPeople(s, a)), dn = P.filter(x => x.done).length; return card('총 신청', `${apps.length}<span class="text-xs font-normal"> 건 · </span>${P.length}`, '명', 'text-slate-900') + card('참석 확인 (수령)', dn, '명', 'text-blue-600') + card('미참석', P.length - dn, '명', 'text-rose-600'); })()
     : card('총 신청', apps.length, '건', 'text-slate-900') + card('수령 완료', rec.length, '건', 'text-blue-600') + card('미수령', apps.length - rec.length, '건', 'text-rose-600') + card('물품 금액 합계', won(apps.reduce((x, a) => x + (a.totalAmount || 0), 0)), '원', 'text-amber-600')
       + (FUND ? `<div class="col-span-full text-[11px] text-slate-600 -mt-2">${fundOpts(s).concat(['']).map(f => { const xs = apps.filter(a => (a.fund || '') === f); return xs.length ? `<span class="inline-block mr-3"><b>${esc(f || '재원 미지정')}</b> ${xs.length}건 · ${won(xs.reduce((x, a) => x + (a.totalAmount || 0), 0))}원</span>` : ''; }).join('')}</div>` : '');
   // 선택형 질문(복수 선택·하나 고르기·체크)의 보기별 인원: 예) 참석 행사 — 기념식 52명 · 현장연구발표회 49명
@@ -1736,7 +1737,7 @@ function renderAdmin(s, r) {
     if (!hit) return false;
     if (ft && a.userType !== ft) return false;
     if (f === 'deposited') return a.isDeposited; if (f === 'pending') return !a.isDeposited;
-    if (f === 'received') return a.isReceived; if (f === 'notreceived') return !a.isReceived; if (f === 'nofund') return !a.fund;
+    if (f === 'received') return recvOf(a, s); if (f === 'notreceived') return !recvOf(a, s); if (f === 'nofund') return !a.fund;
     return true;
   });
   $('#table-count-badge').textContent = `총 ${rows.length}건`;
@@ -1772,7 +1773,7 @@ function renderAdmin(s, r) {
       ${FUND ? `<td class="p-3 text-center"><select onchange="setFund('${esc(a.id)}', this.value)" class="border rounded px-1.5 py-1 text-[11px] ${a.fund ? 'border-slate-300' : 'border-amber-400 bg-amber-50 text-amber-800'}" ${a.isPurged && !a.fund ? '' : ''}><option value="">미지정</option>${[...new Set([...fundOpts(s), ...(a.fund ? [a.fund] : [])])].map(o => `<option ${o === a.fund ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select></td>` : ''}
       ${DEP ? `<td class="p-3 text-center text-slate-500 text-[11px] font-mono">${a.isPurged ? '파기됨' : esc(p ? (VIEW.mask ? maskName(p.depositName) : p.depositName) : '-')}${a.depositPlanned && !a.isPurged ? `<br><span class="font-sans text-slate-400 whitespace-nowrap">입금 ${esc(a.depositPlanned.slice(5).replace('-', '/'))}</span>` : ''}</td>
       <td class="p-3 text-center"><button onclick="toggleDeposit('${esc(a.id)}')" class="px-2.5 py-1 rounded text-[11px] font-bold ${a.isDeposited ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}" title="${esc(a.depositedBy || '')}">${a.isDeposited ? `<i class="fa-solid fa-check"></i> ${esc(a.depositedAt)}` : '입금대기'}</button></td>` : ''}
-      <td class="p-3 text-center">${a.isReceived
+      <td class="p-3 text-center">${ckOn(s) ? (P => { const n = P.filter(x => x.done).length; return `<span class="px-2 py-1 rounded text-[11px] font-bold ${n === P.length && n ? 'bg-blue-100 text-blue-800' : n ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-500'}" title="현장 참석 확인(서명·직원 확인)">${n ? `참석 ${n}/${P.length}명` : '미참석'}</span>`; })(ckPeople(s, a)) : a.isReceived
         ? `<span class="px-2 py-1 rounded text-[11px] font-bold bg-blue-100 text-blue-800" title="${esc(a.receivedAt + ' ' + (a.receivedBy || ''))}">수령 ${a.hasSignature ? '<i class="fa-solid fa-signature"></i>' : ''}</span>${a.isPurged ? '' : `<br><button onclick="undoReceive('${esc(a.id)}')" class="text-[10px] text-slate-400 hover:text-rose-600">취소</button>`}`
         : (a.isPurged ? '<span class="text-slate-400">미수령</span>' : `<button onclick="goKiosk('${esc(a.id)}')" class="px-2 py-1 rounded text-[11px] font-bold bg-slate-100 text-slate-600 hover:bg-emerald-100 hover:text-emerald-800"><i class="fa-solid fa-pen-nib"></i> 서명받기</button>${svcKiosk(s).length ? `<br><button onclick="callTablet('${esc(a.id)}')" title="현장 태블릿에 이 사람 서명 화면 띄우기" class="mt-1 px-2 py-1 rounded text-[11px] font-bold bg-ewelfare-50 text-ewelfare-800 border border-ewelfare-200 hover:bg-ewelfare-100"><i class="fa-solid fa-tablet-screen-button"></i> 태블릿</button>` : ''}`)}</td>
       <td class="p-3 text-center">${a.isPurged ? `<span class="text-[10px] text-slate-400">파기 ${esc(a.purgedAt)}</span>` : `<button onclick="toggleBlock('${esc(a.id)}')" class="text-[11px] mr-2 ${bk ? 'text-rose-600' : 'text-slate-400 hover:text-rose-600'}" title="${bk ? '구입 제한 풀기' : '구입 제한'}"><i class="fa-solid fa-ban"></i></button><button onclick="deleteApp('${esc(a.id)}')" class="text-[11px] text-slate-400 hover:text-rose-600" title="신청 삭제"><i class="fa-solid fa-trash-can"></i></button>`}</td>
@@ -4117,6 +4118,10 @@ const ckField = s => (s?.fields || []).find(f => f.id === s?.checkin?.byField &&
 const ckAppSess = (s, a) => { const f = ckField(s); if (!f) return ['']; const v = piiOf(a)?.ext?.[f.id]; return f.type === 'check' ? (v === '예' ? [f.label] : []) : Array.isArray(v) ? v : v ? [v] : []; };
 /** 사람별 참석 구분: a.pSess[사람번호] = ['현장연구발표회'] 처럼 따로 정한 사람만, 나머지는 신청서 답 그대로 */
 const personSess = (s, a, i) => (Array.isArray(a.pSess?.[i]) ? a.pSess[i] : ckAppSess(s, a));
+/** 현장 확인 행사의 '수령' = 참석 확인(서명·직원 확인). 행사 필터가 걸려 있으면 그 행사 기준 */
+const ckOptSess = s => (VIEW.opt && VIEW.opt.sid === s?.id && ckOn(s) && optField(s)?.id === ckField(s)?.id ? VIEW.opt.val : null);
+const ckPeople = (s, a, v = ckOptSess(s)) => appPeople(s, a).map((x, i) => i).filter(i => (v ? personSess(s, a, i).includes(v) : true)).map(i => ({ i, done: v ? !!a.ck?.[v]?.[i] : Object.values(a.ck || {}).some(o => o?.[i]) }));
+const recvOf = (a, s = findSvc(DB, a.serviceId)) => ckOn(s) ? ckPeople(s, a).some(x => x.done) : !!a.isReceived;
 const sessPeople = (s, a, v) => appPeople(s, a).map((x, i) => ({ ...x, i })).filter(x => personSess(s, a, x.i).includes(v));
 function ckSessions(s, apps) { const f = ckField(s); if (!f) return ['']; return f.type === 'check' ? [f.label] : optVals(s, f, apps); }
 const ckKey = v => facKey(v || 'all').slice(0, 40) || 'all';
@@ -4297,12 +4302,12 @@ const qtyOf = a => Object.values(a.itemQty || {}).reduce((x, n) => x + (Number(n
 const pct = (a, b) => b ? `${Math.round(a / b * 100)}%` : '-';
 function statsTables(D) {
   const T = [];
-  const rec = D.all.filter(x => x.a.isReceived), sig = rec.filter(x => x.a.hasSignature), anyDep = D.svcs.some(s => payMode(s) === 'deposit');
+  const rec = D.all.filter(x => recvOf(x.a)), sig = rec.filter(x => x.a.hasSignature), anyDep = D.svcs.some(s => payMode(s) === 'deposit');
   T.push({ key: 'round', title: '회차별 현황', head: [...(D.scope === 'all' ? ['서비스'] : []), '회차', '신청(건)', '수량', '금액(원)', ...(anyDep ? ['입금 확인'] : []), '수령', '미수령', '수령률', '서명', '개인정보'],
-    rows: D.rows.map(({ s, r, apps }) => { const rc = apps.filter(a => a.isReceived); return [...(D.scope === 'all' ? [s.name] : []), r.name, apps.length, apps.reduce((x, a) => x + qtyOf(a), 0), apps.reduce((x, a) => x + (a.totalAmount || 0), 0), ...(anyDep ? [payMode(s) === 'deposit' ? apps.filter(a => a.isDeposited).length : '-'] : []), rc.length, apps.length - rc.length, pct(rc.length, apps.length), rc.filter(a => a.hasSignature).length, r.piiPurgedAt ? `파기 ${r.piiPurgedAt.slice(0, 10)}` : '보관 중']; }) });
+    rows: D.rows.map(({ s, r, apps }) => { const rc = apps.filter(a => recvOf(a)); return [...(D.scope === 'all' ? [s.name] : []), r.name, apps.length, apps.reduce((x, a) => x + qtyOf(a), 0), apps.reduce((x, a) => x + (a.totalAmount || 0), 0), ...(anyDep ? [payMode(s) === 'deposit' ? apps.filter(a => a.isDeposited).length : '-'] : []), rc.length, apps.length - rc.length, pct(rc.length, apps.length), rc.filter(a => a.hasSignature).length, r.piiPurgedAt ? `파기 ${r.piiPurgedAt.slice(0, 10)}` : '보관 중']; }) });
   const group = (key, title, fn, show = true) => {
     if (!show) return; const m = new Map();
-    D.all.forEach(x => { const k = fn(x) || '(미지정)'; const g = m.get(k) || { n: 0, q: 0, amt: 0, rc: 0, sg: 0 }; g.n++; g.q += qtyOf(x.a); g.amt += x.a.totalAmount || 0; if (x.a.isReceived) { g.rc++; if (x.a.hasSignature) g.sg++; } m.set(k, g); });
+    D.all.forEach(x => { const k = fn(x) || '(미지정)'; const g = m.get(k) || { n: 0, q: 0, amt: 0, rc: 0, sg: 0 }; g.n++; g.q += qtyOf(x.a); g.amt += x.a.totalAmount || 0; if (recvOf(x.a)) { g.rc++; if (x.a.hasSignature) g.sg++; } m.set(k, g); });
     if (!m.size) return;
     T.push({ key, title, head: [title.replace(/별.*/, ''), '건수', '수량', '금액(원)', '수령', '서명'], rows: [...m.entries()].sort((a, b) => b[1].n - a[1].n).map(([k, g]) => [k, g.n, g.q, g.amt, g.rc, g.sg]) });
   };
@@ -4326,7 +4331,7 @@ function chartRounds(D) {
   if (!rows.length) return '<p class="text-xs text-slate-400 py-6 text-center">아직 신청이 없습니다.</p>';
   const max = Math.max(...rows.map(x => x.apps.length)), H = 150;
   return `<div class="overflow-x-auto"><div class="flex items-end gap-3 min-w-full px-1 pt-5" style="height:${H + 60}px">${rows.map(({ s, r, apps }) => {
-    const n = apps.length, rc = apps.filter(a => a.isReceived).length, h = Math.max(4, Math.round(n / max * H)), hr = n ? Math.round(rc / n * h) : 0;
+    const n = apps.length, rc = apps.filter(a => recvOf(a)).length, h = Math.max(4, Math.round(n / max * H)), hr = n ? Math.round(rc / n * h) : 0;
     const lab = (D.scope === 'all' ? s.name.replace(/\s*신청$/, '') + ' ' : '') + String(r.name).replace(/^\d{4}년\s*/, '');
     const tip = `${D.scope === 'all' ? s.name + ' · ' : ''}${r.name}\n신청 ${n}건 · 수령 ${rc}건 · 미수령 ${n - rc}건 (수령률 ${pct(rc, n)})`;
     return `<div class="flex flex-col items-center justify-end h-full flex-1 min-w-[44px] max-w-[88px]" title="${esc(tip)}">
@@ -4514,7 +4519,7 @@ async function archiveRound(sid, rid) {
     await mutateMain(d => {
       const x = findSvc(d, sid)?.rounds.find(y => y.id === rid); if (!x) return false;
       const mine = d.applications.filter(a => a.roundId === rid);
-      x.archived = { at: ymdhm(), n: mine.length, amount: mine.reduce((t, a) => t + (a.totalAmount || 0), 0), received: mine.filter(a => a.isReceived).length };
+      x.archived = { at: ymdhm(), n: mine.length, amount: mine.reduce((t, a) => t + (a.totalAmount || 0), 0), received: mine.filter(a => recvOf(a)).length };
       d.applications = d.applications.filter(a => a.roundId !== rid);
     });
     UI.toast('보관했습니다.'); renderAll();
